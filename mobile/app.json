@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "AKNU Hostels",
+    "slug": "aknu-hostels",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#0f2744"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "in.edu.aknu.hostels",
+      "adaptiveIcon": {
+        "backgroundColor": "#0f2744"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow AKNU Hostels to access your camera to scan student meal QR credentials."
+        }
+      ]
+    ]
+  }
+}

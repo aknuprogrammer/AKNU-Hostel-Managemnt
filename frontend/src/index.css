@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #F7F3ED;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #FCFAF7;
+  --color-text: #202B3C;
+  --color-text-secondary: #5C6675;
+  --color-muted: #737C89;
+  --color-border: #DED8CF;
+  --color-divider: #E8E1D7;
+
+  --color-primary: #23395D;
+  --color-primary-pressed: #192B47;
+  --color-primary-text: #FFFFFF;
+  --color-accent: #92582F;
+  --color-accent-soft: #F0E0D2;
+  --color-accent-text: #754522;
+  --color-focus: #5276A5;
+
+  --color-success: #166534;
+  --color-success-bg: #DCFCE7;
+  --color-warning: #854D0E;
+  --color-warning-bg: #FEF3C7;
+  --color-danger: #991B1B;
+  --color-danger-bg: #FEE2E2;
+  --color-info: #1D4ED8;
+  --color-info-bg: #DBEAFE;
+
+  --color-table-header: #E4EAF3;
+  --color-table-hover: #F1ECE5;
+  --color-table-selected: #E8EDF5;
+
+  --color-sidebar: #23395D;
+  --color-sidebar-active: #354D70;
+  --color-sidebar-text: #DCE5F1;
+}
+
+@layer base {
+  body {
+    background-color: #F7F3ED;
+    color: #202B3C;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+  }
+}
+
+/* Custom Scrollbars in Heritage Tone */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F1ECE5;
+}
+::-webkit-scrollbar-thumb {
+  background: #DED8CF;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5C6675;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Scanner pulse glow with heritage accent */
+@keyframes scanline {
+  0% { top: 0%; opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { top: 96%; opacity: 0.8; }
+}
+
+.animate-scanline {
+  animation: scanline 2.2s ease-in-out infinite alternate;
+}

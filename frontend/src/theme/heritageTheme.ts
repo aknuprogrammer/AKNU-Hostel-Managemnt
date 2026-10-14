@@ -1,0 +1,76 @@
+export const heritageTheme = {
+  light: {
+    background: "#F7F3ED",
+    surface: "#FFFFFF",
+    surfaceElevated: "#FCFAF7",
+    text: "#202B3C",
+    textSecondary: "#5C6675",
+    muted: "#737C89",
+    border: "#DED8CF",
+    divider: "#E8E1D7",
+
+    primary: "#23395D",
+    primaryPressed: "#192B47",
+    primaryText: "#FFFFFF",
+    accent: "#92582F",
+    accentSoft: "#F0E0D2",
+    accentText: "#754522",
+    focus: "#5276A5",
+
+    success: "#166534",
+    successBg: "#DCFCE7",
+    warning: "#854D0E",
+    warningBg: "#FEF3C7",
+    danger: "#991B1B",
+    dangerBg: "#FEE2E2",
+    info: "#1D4ED8",
+    infoBg: "#DBEAFE",
+
+    tableHeader: "#E4EAF3",
+    tableHover: "#F1ECE5",
+    tableSelected: "#E8EDF5",
+
+    sidebar: "#23395D",
+    sidebarActive: "#354D70",
+    sidebarText: "#DCE5F1",
+  },
+
+  dark: {
+    background: "#151A22",
+    surface: "#202833",
+    surfaceElevated: "#273240",
+    text: "#F2F4F7",
+    textSecondary: "#B0BAC8",
+    muted: "#919DAD",
+    border: "#394555",
+    divider: "#303B49",
+
+    primary: "#A9C0E4",
+    primaryPressed: "#C0D1ED",
+    primaryText: "#192536",
+    accent: "#E0AD83",
+    accentSoft: "#48382E",
+    accentText: "#E0AD83",
+    focus: "#A9C0E4",
+
+    success: "#86EFAC",
+    successBg: "#173D2B",
+    warning: "#FCD34D",
+    warningBg: "#45371B",
+    danger: "#FCA5A5",
+    dangerBg: "#48252B",
+    info: "#93C5FD",
+    infoBg: "#203956",
+
+    tableHeader: "#2C3A4D",
+    tableHover: "#2B3542",
+    tableSelected: "#304158",
+
+    sidebar: "#192536",
+    sidebarActive: "#30435C",
+    sidebarText: "#DCE5F1",
+  },
+} as const;
+
+export type HeritageThemeMode = keyof typeof heritageTheme;
+export type HeritageColors = typeof heritageTheme.light;
