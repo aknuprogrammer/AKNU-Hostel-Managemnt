@@ -22,7 +22,7 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
       JOIN roles r ON u.role = r.id
       LEFT JOIN user_hostel_assignments uha ON u.id = uha.user_id
       LEFT JOIN hostels h ON uha.hostel_id = h.id
-      WHERE u.role != 'student'
+      WHERE u.role NOT IN ('student', 'super_admin')
       ORDER BY
         CASE WHEN u.role IN ('univ_mgmt', 'mess_staff', 'security_staff', 'accounts_staff', 'maint_staff') THEN 1 ELSE 0 END,
         u.full_name ASC
@@ -141,3 +141,80 @@ export async function deleteStaffRecord(req: AuthRequest, res: Response): Promis
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
+export async function updateStaffRecord(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { fullName, role, email, phone, hostelId, isActive } = req.body;
+
+  try {
+    const existing = await executeQuery('SELECT * FROM users WHERE id = $1', [id]);
+    if (existing.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'Staff member not found' });
+      return;
+    }
+
+    if (existing.rows[0].role === 'super_admin') {
+      res.status(403).json({ success: false, error: 'Super Administrator cannot be modified here' });
+      return;
+    }
+
+    // Check email uniqueness if email is changed
+    if (email && email.toLowerCase() !== (existing.rows[0].email || '').toLowerCase()) {
+      const emailCheck = await executeQuery(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [email.trim(), id]
+      );
+      if (emailCheck.rowCount > 0) {
+        res.status(400).json({ success: false, error: 'Email address is already in use by another user' });
+        return;
+      }
+    }
+
+    await executeTransaction(async (query) => {
+      await query(
+        `UPDATE users SET
+          full_name = COALESCE($1, full_name),
+          role = COALESCE($2, role),
+          email = COALESCE($3, email),
+          phone = COALESCE($4, phone),
+          is_active = COALESCE($5, is_active),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $6`,
+        [
+          fullName ? fullName.trim() : null,
+          role || null,
+          email ? email.trim().toLowerCase() : null,
+          phone !== undefined ? (phone ? phone.trim() : null) : null,
+          typeof isActive === 'boolean' ? isActive : null,
+          id
+        ]
+      );
+
+      if (hostelId !== undefined) {
+        await query('DELETE FROM user_hostel_assignments WHERE user_id = $1', [id]);
+        if (hostelId) {
+          await query(
+            `INSERT INTO user_hostel_assignments (id, user_id, hostel_id) VALUES ($1, $2, $3)`,
+            [`uha-${uuidv4().slice(0, 8)}`, id, hostelId]
+          );
+        }
+      }
+    });
+
+    if (req.user) {
+      await logAudit(
+        req.user.id,
+        'UPDATE_STAFF_RECORD',
+        'users',
+        id,
+        `Updated staff record for ${fullName || existing.rows[0].full_name}`,
+        req
+      );
+    }
+
+    res.json({ success: true, message: 'Staff record updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to update staff: ' + err.message });
+  }
+}
+

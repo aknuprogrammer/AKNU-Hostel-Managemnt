@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { executeQuery } from '../config/database.js';
 import { generateToken } from '../config/jwt.js';
 import { logAudit, AuthRequest } from '../middleware/auth.js';
+import { generateQrSalt, signStudentQrToken } from '../utils/qr.js';
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body;
@@ -16,12 +17,13 @@ export async function login(req: Request, res: Response): Promise<void> {
       `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.is_active, r.display_name as role_display
        FROM users u
        JOIN roles r ON u.role = r.id
-       WHERE LOWER(u.email) = LOWER($1)`,
+       LEFT JOIN students s ON s.user_id = u.id
+       WHERE LOWER(u.email) = LOWER($1) OR UPPER(s.roll_number) = UPPER($1)`,
       [email.trim()]
     );
 
     if (userResult.rowCount === 0) {
-      res.status(401).json({ success: false, error: 'Invalid email address or password' });
+      res.status(401).json({ success: false, error: 'Invalid email/roll number or password' });
       return;
     }
 
@@ -68,7 +70,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     let studentProfile = null;
     if (user.role === 'student') {
       const studentRes = await executeQuery(
-        `SELECT s.*, h.name as hostel_name, h.id as hostel_id, r.room_number, b.bed_number
+        `SELECT s.*, h.name as hostel_name, h.id as hostel_id, h.code as hostel_code, h.category as hostel_category, r.room_number, b.bed_number
          FROM students s
          LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
          LEFT JOIN hostels h ON sa.hostel_id = h.id
@@ -79,6 +81,20 @@ export async function login(req: Request, res: Response): Promise<void> {
       );
       if (studentRes.rowCount > 0) {
         studentProfile = studentRes.rows[0];
+        if (studentProfile.hostel_category) {
+          assignedCategory = studentProfile.hostel_category;
+        }
+        if (!studentProfile.qr_credential_token) {
+          const salt = generateQrSalt();
+          const qrToken = signStudentQrToken(studentProfile.id, studentProfile.reg_number, salt);
+          await executeQuery(
+            `UPDATE students SET qr_credential_token = $1, qr_salt = $2, qr_status = 'active' WHERE id = $3`,
+            [qrToken, salt, studentProfile.id]
+          );
+          studentProfile.qr_credential_token = qrToken;
+          studentProfile.qr_salt = salt;
+          studentProfile.qr_status = 'active';
+        }
       }
     }
 
@@ -152,7 +168,7 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
     let studentProfile = null;
     if (user.role === 'student') {
       const studentRes = await executeQuery(
-        `SELECT s.*, h.name as hostel_name, h.id as hostel_id, r.room_number, b.bed_number
+        `SELECT s.*, h.name as hostel_name, h.id as hostel_id, h.code as hostel_code, h.category as hostel_category, r.room_number, b.bed_number
          FROM students s
          LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
          LEFT JOIN hostels h ON sa.hostel_id = h.id
@@ -163,6 +179,20 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
       );
       if (studentRes.rowCount > 0) {
         studentProfile = studentRes.rows[0];
+        if (studentProfile.hostel_category) {
+          assignedCategory = studentProfile.hostel_category;
+        }
+        if (!studentProfile.qr_credential_token) {
+          const salt = generateQrSalt();
+          const qrToken = signStudentQrToken(studentProfile.id, studentProfile.reg_number, salt);
+          await executeQuery(
+            `UPDATE students SET qr_credential_token = $1, qr_salt = $2, qr_status = 'active' WHERE id = $3`,
+            [qrToken, salt, studentProfile.id]
+          );
+          studentProfile.qr_credential_token = qrToken;
+          studentProfile.qr_salt = salt;
+          studentProfile.qr_status = 'active';
+        }
       }
     }
 
@@ -187,17 +217,19 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
 
 export async function changePassword(req: AuthRequest, res: Response): Promise<void> {
   const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword || newPassword.length < 6) {
+  if (!newPassword || newPassword.length < 6) {
     res.status(400).json({ success: false, error: 'New password must be at least 6 characters long' });
     return;
   }
 
   try {
     const userRes = await executeQuery('SELECT password_hash FROM users WHERE id = $1', [req.user!.id]);
-    const match = await bcrypt.compare(currentPassword, userRes.rows[0].password_hash);
-    if (!match) {
-      res.status(400).json({ success: false, error: 'Current password does not match' });
-      return;
+    if (currentPassword) {
+      const match = await bcrypt.compare(currentPassword, userRes.rows[0].password_hash);
+      if (!match) {
+        res.status(400).json({ success: false, error: 'Current password does not match' });
+        return;
+      }
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
@@ -207,5 +239,62 @@ export async function changePassword(req: AuthRequest, res: Response): Promise<v
     res.json({ success: true, message: 'Password updated successfully' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function setupPassword(req: Request, res: Response): Promise<void> {
+  const { identifier, temporaryPassword, newPassword } = req.body;
+
+  if (!identifier || !temporaryPassword || !newPassword) {
+    res.status(400).json({ success: false, error: 'Email or Roll number, temporary password, and new password are required' });
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    res.status(400).json({ success: false, error: 'New password must be at least 6 characters long' });
+    return;
+  }
+
+  try {
+    const userResult = await executeQuery(
+      `SELECT u.id, u.email, u.password_hash, u.full_name, u.role, u.is_active
+       FROM users u
+       LEFT JOIN students s ON s.user_id = u.id
+       WHERE LOWER(u.email) = LOWER($1) OR UPPER(s.roll_number) = UPPER($1)`,
+      [identifier.trim()]
+    );
+
+    if (userResult.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'User account not found with this email or roll number' });
+      return;
+    }
+
+    const user = userResult.rows[0];
+    if (!user.is_active) {
+      res.status(403).json({ success: false, error: 'Your account has been deactivated. Please contact administrator.' });
+      return;
+    }
+
+    const match = await bcrypt.compare(temporaryPassword, user.password_hash);
+    if (!match) {
+      res.status(400).json({ success: false, error: 'Temporary password is incorrect. Please check your temporary credentials.' });
+      return;
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await executeQuery(
+      'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [newHash, user.id]
+    );
+
+    await logAudit(user.id, 'SETUP_PASSWORD', 'user', user.id, { role: user.role }, req);
+
+    res.json({
+      success: true,
+      message: 'New password set up successfully! You can now log in with your new password.'
+    });
+  } catch (err: any) {
+    console.error('[Setup Password Error]', err);
+    res.status(500).json({ success: false, error: 'Failed to set up new password: ' + err.message });
   }
 }

@@ -28,7 +28,55 @@ export async function getMessMenu(req: AuthRequest, res: Response): Promise<void
     sql += ' ORDER BY ms.start_time ASC';
 
     const menus = await executeQuery(sql, params);
-    res.json({ success: true, data: menus.rows });
+    if (menus.rows.length > 0) {
+      res.json({ success: true, data: menus.rows });
+      return;
+    }
+
+    // Default dynamic fallback if no custom rows configured yet:
+    const hostelInfo = await executeQuery('SELECT name, code, category FROM hostels WHERE id = $1', [hostelId]);
+    const isGirls = hostelInfo.rows.length > 0
+      ? hostelInfo.rows[0].category === 'girls' || hostelInfo.rows[0].name.toLowerCase().includes('girl')
+      : String(hostelId).toLowerCase().includes('gh') || String(hostelId).toLowerCase().includes('girl');
+
+    const sessions = await executeQuery('SELECT * FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC');
+    const day = (dayOfWeek as string) || 'Monday';
+
+    const defaultMenus = sessions.rows.map((s) => {
+      let items = '';
+      if (s.code === 'breakfast') {
+        items = isGirls
+          ? 'Masala Dosa, Upma, Coconut Chutney, Sambar, Tea / Coffee'
+          : 'Idli, Medu Vada, Peanut Chutney, Sambar, Tea / Coffee';
+      } else if (s.code === 'lunch') {
+        items = isGirls
+          ? 'Steamed Rice, Palak Pappu, Mixed Veg Kurma, Majjiga Pulusu, Fresh Curd'
+          : 'Steamed Rice, Andhra Tomato Pappu, Aloo Fry, Sambar, Fresh Curd, Papad';
+      } else if (s.code === 'snacks') {
+        items = isGirls
+          ? 'Green Tea / Fresh Milk, Osmania Biscuits (Optional Counter)'
+          : 'Evening Tea / Coffee, Salted Biscuits (Optional Counter)';
+      } else {
+        items = isGirls
+          ? 'Phulka Roti, Paneer Butter Masala, Veg Biryani, Rasam, Curd'
+          : 'Phulka Chapati, Chana Masala, Jeera Rice, Rasam, Fresh Curd';
+      }
+
+      return {
+        id: `def-${s.id}-${hostelId}-${day}`,
+        hostel_id: hostelId,
+        day_of_week: day,
+        meal_session_id: s.id,
+        session_name: s.name,
+        session_code: s.code,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        menu_items: items,
+        is_special: false
+      };
+    });
+
+    res.json({ success: true, data: defaultMenus });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

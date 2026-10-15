@@ -373,6 +373,62 @@ export async function deleteHostel(req: AuthRequest, res: Response): Promise<voi
   }
 }
 
+export async function updateHostel(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { name, code, category, campus, chiefWardenId, wardenId } = req.body;
+
+  if (!name || !code) {
+    res.status(400).json({ success: false, error: 'Hostel Name and Code are required' });
+    return;
+  }
+
+  const cleanCategory = String(category).trim().toLowerCase();
+  if (!['boys', 'girls'].includes(cleanCategory)) {
+    res.status(400).json({ success: false, error: 'Category must be either "boys" or "girls"' });
+    return;
+  }
+
+  try {
+    const existing = await executeQuery('SELECT id FROM hostels WHERE LOWER(code) = LOWER($1) AND id != $2', [code.trim(), id]);
+    if (existing.rows.length > 0) {
+      res.status(400).json({ success: false, error: `Another hostel with code "${code}" already exists` });
+      return;
+    }
+
+    await executeTransaction(async (query) => {
+      await query(
+        `UPDATE hostels
+         SET name = $1, code = $2, category = $3, campus = $4, chief_warden_id = $5, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $6`,
+        [name.trim(), code.trim().toUpperCase(), cleanCategory, (campus || '').trim(), chiefWardenId || null, id]
+      );
+
+      if (chiefWardenId) {
+        await query('DELETE FROM user_hostel_assignments WHERE hostel_id = $1 AND role = $2', [id, 'chief_warden']);
+        await query(
+          `INSERT INTO user_hostel_assignments (id, user_id, hostel_id, role)
+           VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, hostel_id) DO NOTHING`,
+          [`uha-cw-${id}`, chiefWardenId, id, 'chief_warden']
+        );
+      }
+      if (wardenId) {
+        await query('DELETE FROM user_hostel_assignments WHERE hostel_id = $1 AND role = $2', [id, 'hostel_warden']);
+        await query(
+          `INSERT INTO user_hostel_assignments (id, user_id, hostel_id, role)
+           VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, hostel_id) DO NOTHING`,
+          [`uha-w-${id}`, wardenId, id, 'hostel_warden']
+        );
+      }
+    });
+
+    await logAudit(req.user?.id, 'UPDATE_HOSTEL', 'hostel', id, { name, code, category: cleanCategory }, req);
+
+    res.json({ success: true, message: 'Hostel updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 export async function addRoomToHostel(req: AuthRequest, res: Response): Promise<void> {
   const { id: hostelId } = req.params;
   const { roomNumber, floorNumber = 1, capacity = 2, roomType = 'double', blockCode = 'A', blockName = 'Main Wing' } = req.body;

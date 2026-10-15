@@ -6,6 +6,7 @@ import {
   allocateBed,
   transferRoom,
   createHostel,
+  updateHostel,
   deleteHostel,
   addRoomToHostel,
   getUnallocatedCandidates,
@@ -21,6 +22,7 @@ router.get('/rooms/beds', authenticate, getRoomsWithBeds);
 router.get('/batch/unallocated-candidates', authenticate, getUnallocatedCandidates);
 router.get('/:id', authenticate, getHostelDetails);
 router.post('/', authenticate, requireRoles('super_admin', 'chief_warden', 'univ_mgmt'), createHostel);
+router.put('/:id', authenticate, requireRoles('super_admin', 'chief_warden'), updateHostel);
 router.delete('/:id', authenticate, requireRoles('super_admin', 'chief_warden'), deleteHostel);
 router.post('/:id/rooms', authenticate, requireRoles('super_admin', 'chief_warden', 'hostel_warden'), addRoomToHostel);
 router.post('/allocations', authenticate, requireRoles('super_admin', 'chief_warden', 'hostel_warden'), allocateBed);

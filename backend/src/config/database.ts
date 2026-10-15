@@ -34,33 +34,64 @@ export async function getDb() {
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
-      const pidFile = path.join(dataDir, 'postmaster.pid');
-      if (fs.existsSync(pidFile)) {
-        try {
-          fs.unlinkSync(pidFile);
-        } catch (e) {}
-      }
 
-      try {
-        pgliteInstance = new PGlite(dataDir);
-        await pgliteInstance.waitReady;
-      } catch (initErr: any) {
-        console.warn('[Database] PGlite failed to resume interrupted storage, performing recovery...', initErr?.message);
+      // Helper to clear stale lock files
+      const clearPid = () => {
+        const pidFile = path.join(dataDir, 'postmaster.pid');
+        if (fs.existsSync(pidFile)) {
+          try {
+            fs.unlinkSync(pidFile);
+          } catch (e) {}
+        }
+      };
+
+      clearPid();
+
+      // Retry up to 5 times with delay if directory was temporarily held by previous process
+      let lastErr: any = null;
+      for (let attempt = 1; attempt <= 5; attempt++) {
         try {
-          if (fs.existsSync(dataDir)) {
-            fs.rmSync(dataDir, { recursive: true, force: true });
-            fs.mkdirSync(dataDir, { recursive: true });
-          }
+          clearPid();
           pgliteInstance = new PGlite(dataDir);
           await pgliteInstance.waitReady;
-          console.log('[Database] Clean local storage reinitialized after recovery.');
-        } catch (recoverErr) {
-          console.error('[Database Recovery Failed]', recoverErr);
-          throw recoverErr;
+          lastErr = null;
+          break;
+        } catch (err: any) {
+          lastErr = err;
+          console.warn(`[Database] PGlite connection attempt ${attempt}/5 failed (${err?.message}), waiting...`);
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
 
-      console.log(`[Database] Initialized local PostgreSQL engine (PGlite WASM) at ${dataDir}`);
+      if (lastErr || !pgliteInstance) {
+        console.warn('[Database Recovery] WAL checkpoint was corrupted from abrupt process termination. Recovering clean data directory...');
+        try {
+          const backupDir = `${dataDir}_corrupt_${Date.now()}`;
+          fs.renameSync(dataDir, backupDir);
+          fs.mkdirSync(dataDir, { recursive: true });
+          pgliteInstance = new PGlite(dataDir);
+          await pgliteInstance.waitReady;
+          console.log('[Database Recovery] Clean database storage initialized. Schema and seeds will be auto-applied.');
+        } catch (recoverErr) {
+          console.error('[Database Fatal] Unable to recover PGlite instance:', recoverErr);
+          throw lastErr;
+        }
+      }
+
+      console.log(`[Database] Initialized local PostgreSQL engine (PGlite WASM) persistently at ${dataDir}`);
+
+      // Graceful shutdown
+      const cleanup = async () => {
+        if (pgliteInstance) {
+          try {
+            await pgliteInstance.close();
+            console.log('[Database] PGlite instance closed cleanly.');
+          } catch (e) {}
+          pgliteInstance = null;
+        }
+      };
+      process.once('SIGINT', cleanup);
+      process.once('SIGTERM', cleanup);
     }
     return {
       type: 'pglite' as const,

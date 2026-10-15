@@ -50,9 +50,11 @@ export interface StudentProfile {
   qr_status: string;
   hostel_name?: string;
   hostel_id?: string;
+  hostel_code?: string;
   room_number?: string;
   bed_number?: string;
   allocation_id?: string;
+  emergency_contact?: string;
   qrDataUri?: string;
 }
 
@@ -64,6 +66,7 @@ export interface Hostel {
   campus: string;
   total_capacity: number;
   status: string;
+  chief_warden_id?: string;
   total_rooms?: number;
   total_beds?: number;
   occupied_beds?: number;

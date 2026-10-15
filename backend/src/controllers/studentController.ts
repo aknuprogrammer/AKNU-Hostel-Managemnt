@@ -7,8 +7,11 @@ import { AuthRequest, logAudit } from '../middleware/auth.js';
 import { generateQrSalt, signStudentQrToken, generateQrDataUri } from '../utils/qr.js';
 
 export async function getStudents(req: AuthRequest, res: Response): Promise<void> {
-  const { search, hostelId, departmentId, status, page = '1', limit = '20' } = req.query;
-  const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+  const { search, hostelId, departmentId, status, page = '1', limit = '10' } = req.query;
+  const isAll = String(limit).toLowerCase() === 'all' || parseInt(limit as string) === -1;
+  const parsedLimit = isAll ? 100000 : (parseInt(limit as string) || 10);
+  const parsedPage = isAll ? 1 : Math.max(1, parseInt(page as string) || 1);
+  const offset = (parsedPage - 1) * parsedLimit;
 
   try {
     let whereClauses = ['1=1'];
@@ -22,9 +25,13 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
     }
 
     if (hostelId) {
-      whereClauses.push(`sa.hostel_id = $${pIdx}`);
-      params.push(hostelId);
-      pIdx++;
+      if (hostelId === 'unassigned') {
+        whereClauses.push('sa.hostel_id IS NULL');
+      } else {
+        whereClauses.push(`sa.hostel_id = $${pIdx}`);
+        params.push(hostelId);
+        pIdx++;
+      }
     }
 
     if (departmentId) {
@@ -81,7 +88,7 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
       ORDER BY s.created_at DESC
       LIMIT $${pIdx} OFFSET $${pIdx + 1}
     `;
-    params.push(parseInt(limit as string), offset);
+    params.push(parsedLimit, offset);
 
     const studentsRes = await executeQuery(querySql, params);
 
@@ -89,10 +96,10 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
       success: true,
       data: studentsRes.rows,
       pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
+        page: parsedPage,
+        limit: isAll ? total : parsedLimit,
         total,
-        totalPages: Math.ceil(total / parseInt(limit as string))
+        totalPages: isAll ? 1 : (Math.ceil(total / parsedLimit) || 1)
       }
     });
   } catch (err: any) {
@@ -337,10 +344,16 @@ export async function computeRegistrationNumber(params: {
   // 4. Prefix pattern: AKNU/<year>/<hostel short name>/<Course short name>/<Department short name>/
   const prefix = `AKNU/${validYear}/${hostelShort}/${courseShort}/${deptShort}/`;
 
-  // 5. Query max serial number for this exact prefix
+  // 5. Query max serial number specifically for this Course and Department.
+  // Each course and department has its own 4-digit serial sequence starting from 0001 up to 9999.
+  // It does NOT continue from other departments.
   const matchRes = await executeQuery(
-    'SELECT reg_number FROM students WHERE reg_number LIKE $1',
-    [`${prefix}%`]
+    `SELECT reg_number FROM students 
+     WHERE reg_number LIKE $1 OR reg_number LIKE $2`,
+    [
+      `AKNU/${validYear}/%/${courseShort}/${deptShort}/%`,
+      `${prefix}%`
+    ]
   );
 
   let maxSerial = 0;
@@ -353,7 +366,8 @@ export async function computeRegistrationNumber(params: {
     }
   }
 
-  const nextSerial = (maxSerial + 1).toString().padStart(3, '0');
+  // 4-digit serial starting from 0001 up to 9999
+  const nextSerial = (maxSerial + 1).toString().padStart(4, '0');
   return `${prefix}${nextSerial}`;
 }
 
@@ -575,6 +589,16 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
 
       const rollNumber = String(row['Roll Number'] || row['roll_number'] || row['RollNo'] || row['Roll'] || '').trim().toUpperCase();
       let regNumber = String(row['Registration Number'] || row['reg_number'] || row['RegNo'] || row['RegistrationNo'] || '').trim().toUpperCase();
+      if (regNumber) {
+        const parts = regNumber.split('/');
+        if (parts.length >= 6) {
+          const lastNum = parseInt(parts[parts.length - 1], 10);
+          if (!isNaN(lastNum)) {
+            parts[parts.length - 1] = lastNum.toString().padStart(4, '0');
+            regNumber = parts.join('/');
+          }
+        }
+      }
       const fullName = String(row['Full Name'] || row['full_name'] || row['Name'] || '').trim();
       const email = String(row['Email'] || row['email'] || '').trim().toLowerCase();
       const phone = String(row['Phone'] || row['phone'] || row['Mobile'] || '').trim();
@@ -736,3 +760,163 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
     res.status(500).json({ success: false, error: 'Bulk import failed: ' + err.message });
   }
 }
+
+export async function updateStudent(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const {
+    fullName,
+    phone,
+    email,
+    gender,
+    departmentId,
+    courseId,
+    yearOfStudy,
+    currentSemester,
+    permanentAddress,
+    guardianName,
+    guardianPhone,
+    messEligibility,
+    hostelStatus
+  } = req.body;
+
+  try {
+    const existing = await executeQuery('SELECT * FROM students WHERE id = $1', [id]);
+    if (existing.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'Student record not found' });
+      return;
+    }
+
+    const current = existing.rows[0];
+
+    // Check email uniqueness if changing email
+    if (email && email.toLowerCase() !== (current.email || '').toLowerCase()) {
+      const emailCheck = await executeQuery(
+        'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2',
+        [email.trim(), current.user_id]
+      );
+      if (emailCheck.rowCount > 0) {
+        res.status(400).json({ success: false, error: 'Email address is already in use by another user' });
+        return;
+      }
+    }
+
+    await executeTransaction(async (query) => {
+      // 1. Update students record
+      await query(
+        `UPDATE students SET
+          full_name = COALESCE($1, full_name),
+          phone = COALESCE($2, phone),
+          email = COALESCE($3, email),
+          gender = COALESCE($4, gender),
+          department_id = COALESCE($5, department_id),
+          course_id = COALESCE($6, course_id),
+          year_of_study = COALESCE($7, year_of_study),
+          current_semester = COALESCE($8, current_semester),
+          permanent_address = COALESCE($9, permanent_address),
+          guardian_name = COALESCE($10, guardian_name),
+          guardian_phone = COALESCE($11, guardian_phone),
+          mess_eligibility = COALESCE($12, mess_eligibility),
+          hostel_status = COALESCE($13, hostel_status),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $14`,
+        [
+          fullName ? fullName.trim() : null,
+          phone ? phone.trim() : null,
+          email ? email.trim().toLowerCase() : null,
+          gender || null,
+          departmentId || null,
+          courseId || null,
+          yearOfStudy ? parseInt(String(yearOfStudy), 10) : null,
+          currentSemester ? parseInt(String(currentSemester), 10) : null,
+          permanentAddress !== undefined ? permanentAddress : null,
+          guardianName !== undefined ? guardianName : null,
+          guardianPhone !== undefined ? guardianPhone : null,
+          typeof messEligibility === 'boolean' ? messEligibility : null,
+          hostelStatus || null,
+          id
+        ]
+      );
+
+      // 2. Update associated user login record if user_id exists
+      if (current.user_id) {
+        await query(
+          `UPDATE users SET
+            full_name = COALESCE($1, full_name),
+            phone = COALESCE($2, phone),
+            email = COALESCE($3, email),
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $4`,
+          [
+            fullName ? fullName.trim() : null,
+            phone ? phone.trim() : null,
+            email ? email.trim().toLowerCase() : null,
+            current.user_id
+          ]
+        );
+      }
+    });
+
+    if (req.user) {
+      await logAudit(req.user.id, 'UPDATE_STUDENT_RECORD', 'students', id, `Updated student profile for ${fullName || current.full_name}`, req);
+    }
+
+    res.json({ success: true, message: 'Student profile updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to update student: ' + err.message });
+  }
+}
+
+export async function deleteStudent(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  try {
+    const existing = await executeQuery('SELECT * FROM students WHERE id = $1', [id]);
+    if (existing.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'Student record not found' });
+      return;
+    }
+
+    const student = existing.rows[0];
+
+    await executeTransaction(async (query) => {
+      // 1. Find active allocations to vacate beds & decrement room occupancy
+      const activeAllocs = await query(
+        `SELECT sa.id as alloc_id, sa.bed_id, b.room_id
+         FROM student_allocations sa
+         JOIN beds b ON sa.bed_id = b.id
+         WHERE sa.student_id = $1 AND sa.status = 'active'`,
+        [id]
+      );
+
+      for (const alloc of activeAllocs.rows) {
+        await query(`UPDATE beds SET status = 'vacant' WHERE id = $1`, [alloc.bed_id]);
+        await query(`UPDATE rooms SET current_occupancy = GREATEST(0, current_occupancy - 1) WHERE id = $1`, [alloc.room_id]);
+      }
+
+      // 2. Delete allocations
+      await query(`DELETE FROM student_allocations WHERE student_id = $1`, [id]);
+
+      // 3. Delete related transactions, leaves, complaints, etc.
+      await query(`DELETE FROM meal_transactions WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM leave_applications WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM complaints WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM student_dues WHERE student_id = $1`, [id]);
+
+      // 4. Delete student record
+      await query(`DELETE FROM students WHERE id = $1`, [id]);
+
+      // 5. Delete user account
+      if (student.user_id) {
+        await query(`DELETE FROM users WHERE id = $1`, [student.user_id]);
+      }
+    });
+
+    if (req.user) {
+      await logAudit(req.user.id, 'DELETE_STUDENT_RECORD', 'students', id, `Deleted student ${student.full_name} (${student.roll_number})`, req);
+    }
+
+    res.json({ success: true, message: `Student ${student.full_name} removed successfully.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to delete student: ' + err.message });
+  }
+}
+

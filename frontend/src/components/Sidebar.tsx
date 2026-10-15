@@ -48,6 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const role = user?.role || 'student';
 
   // Role permissions for sidebar tabs
+  const canAccessDashboard = role !== 'student';
   const canAccessScanner = ['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager'].includes(role);
   const canAccessStudents = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
   const canAccessHostels = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
@@ -57,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const canAccessSecurity = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
 
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: canAccessDashboard },
     {
       id: 'meal-scanner',
       label: 'Meal QR Scanner',
@@ -69,9 +70,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'hostels', label: 'Hostels & Rooms', icon: Building2, show: canAccessHostels },
     { id: 'staff-records', label: 'Staff Directory', icon: Contact, show: canAccessStaff },
     { id: 'leave', label: 'Leave & Gate Pass', icon: CalendarCheck, show: true },
-    { id: 'complaints', label: 'Complaints', icon: AlertCircle, show: true },
-    { id: 'mess', label: 'Mess Operations', icon: UtensilsCrossed, show: canAccessMess },
-    { id: 'accounts', label: 'Fees & Dues', icon: ReceiptIndianRupee, show: canAccessAccounts },
+    {
+      id: 'mess',
+      label: role === 'student' ? 'Hostel Menu' : 'Mess Operations',
+      icon: UtensilsCrossed,
+      show: canAccessMess
+    },
     { id: 'security', label: 'Visitor Logs', icon: ShieldAlert, show: canAccessSecurity }
   ];
 

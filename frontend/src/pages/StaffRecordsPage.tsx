@@ -13,6 +13,7 @@ import {
   Phone,
   Mail,
   Trash2,
+  Pencil,
   Lock,
   Info,
   X
@@ -45,6 +46,7 @@ interface StaffMember {
   hostel_code?: string;
   isRecordOnly: boolean;
   accessType: string;
+  is_active?: boolean;
   created_at: string;
 }
 
@@ -73,6 +75,18 @@ export const StaffRecordsPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Edit staff modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editRole, setEditRole] = useState('mess_staff');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editHostelId, setEditHostelId] = useState('');
+  const [editIsActive, setEditIsActive] = useState(true);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const fetchStaff = async () => {
     setLoading(true);
@@ -139,14 +153,57 @@ export const StaffRecordsPage: React.FC = () => {
     try {
       await apiRequest(`/staff/${id}`, { method: 'DELETE' });
       setSuccessMsg(`Staff record for ${name} removed.`);
-      fetchStaff();
-      setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
       setError(err.message || 'Failed to delete staff record');
     }
   };
 
+  const handleOpenEditStaff = (member: StaffMember) => {
+    setEditingStaff(member);
+    setEditFullName(member.full_name || '');
+    setEditRole(member.role || 'mess_staff');
+    setEditEmail(member.email || '');
+    setEditPhone(member.phone || '');
+    setEditHostelId(member.hostel_id || '');
+    setEditIsActive(member.is_active ?? true);
+    setEditError('');
+    setShowEditModal(true);
+  };
+
+  const handleSaveEditStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStaff) return;
+    setEditSubmitting(true);
+    setEditError('');
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>(`/staff/${editingStaff.id}`, {
+        method: 'PUT',
+        body: {
+          fullName: editFullName.trim(),
+          role: editRole,
+          email: editEmail.trim(),
+          phone: editPhone.trim(),
+          hostelId: editHostelId || null,
+          isActive: editIsActive
+        }
+      });
+      if (res.success) {
+        setSuccessMsg(res.message);
+        setShowEditModal(false);
+        setEditingStaff(null);
+        fetchStaff();
+        setTimeout(() => setSuccessMsg(''), 4000);
+      }
+    } catch (err: any) {
+      setEditError(err.message || 'Failed to update staff record');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   const filteredStaff = staff.filter((s) => {
+    if (s.role === 'super_admin') return false;
+
     const matchesSearch =
       s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -161,8 +218,8 @@ export const StaffRecordsPage: React.FC = () => {
     return true;
   });
 
-  const recordOnlyCount = staff.filter((s) => s.isRecordOnly).length;
-  const activeLoginCount = staff.filter((s) => !s.isRecordOnly).length;
+  const recordOnlyCount = staff.filter((s) => s.role !== 'super_admin' && s.isRecordOnly).length;
+  const activeLoginCount = staff.filter((s) => s.role !== 'super_admin' && !s.isRecordOnly).length;
 
   return (
     <div className="space-y-3">
@@ -351,16 +408,31 @@ export const StaffRecordsPage: React.FC = () => {
                     </TableCell>
 
                     <TableCell align="right">
-                      {['super_admin', 'chief_warden'].includes(user?.role || '') && member.role !== 'super_admin' && (
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => handleDeleteStaff(member.id, member.full_name)}
-                          title="Remove from staff records"
-                        >
-                          <Trash2 className="w-4 h-4 text-rose-500" />
-                        </Button>
-                      )}
+                      <div className="flex items-center justify-end space-x-1">
+                        {['super_admin', 'chief_warden'].includes(user?.role || '') && member.role !== 'super_admin' && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => handleOpenEditStaff(member)}
+                              title="Edit staff details"
+                              className="text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
+                            >
+                              <Pencil className="w-4 h-4 text-indigo-600" />
+                            </Button>
+
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              onClick={() => handleDeleteStaff(member.id, member.full_name)}
+                              title="Remove from staff records"
+                              className="text-slate-600 hover:text-rose-600 hover:bg-rose-50"
+                            >
+                              <Trash2 className="w-4 h-4 text-rose-500" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -465,6 +537,115 @@ export const StaffRecordsPage: React.FC = () => {
               isLoading={submitting}
             >
               Save Staff Record
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Staff Modal */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingStaff(null);
+        }}
+        title={`Edit Staff Record: ${editingStaff?.full_name || ''}`}
+        size="lg"
+        icon={<Pencil className="w-5 h-5 text-indigo-600" />}
+      >
+        <form onSubmit={handleSaveEditStaff} className="space-y-4">
+          {editError && (
+            <div className="p-3 rounded-md bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center space-x-2">
+              <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+              <span>{editError}</span>
+            </div>
+          )}
+
+          <Input
+            label="Full Legal Name *"
+            required
+            placeholder="e.g. Dr. K. Ramanayya"
+            value={editFullName}
+            onChange={(e) => setEditFullName(e.target.value)}
+          />
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Select
+              label="Staff Position & Role *"
+              value={editRole}
+              onChange={(e) => setEditRole(e.target.value)}
+              options={[
+                { value: 'mess_staff', label: 'Mess Staff (Record Only)' },
+                { value: 'security_staff', label: 'Security Staff (Record Only)' },
+                { value: 'maint_staff', label: 'Maintenance Staff (Record Only)' },
+                { value: 'accounts_staff', label: 'Accounts Staff (Record Only)' },
+                { value: 'univ_mgmt', label: 'University Management (Record Only)' },
+                { value: 'hostel_warden', label: 'Hostel Warden (Active Login)' },
+                { value: 'chief_warden', label: 'Chief Warden (Active Login)' },
+                { value: 'mess_manager', label: 'Mess Manager (Active Login)' }
+              ]}
+            />
+
+            <Select
+              label="Assigned Hostel / Wing"
+              value={editHostelId}
+              onChange={(e) => setEditHostelId(e.target.value)}
+              options={[
+                { value: '', label: 'None / Campus-Wide' },
+                ...hostels.map((h) => ({
+                  value: h.id,
+                  label: `${h.name} (${h.code})`
+                }))
+              ]}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input
+              label="Contact Phone"
+              placeholder="98480xxxxx"
+              value={editPhone}
+              onChange={(e) => setEditPhone(e.target.value)}
+            />
+
+            <Input
+              label="University Email"
+              type="email"
+              placeholder="staff@aknu.edu.in"
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Select
+              label="Account Status"
+              value={editIsActive ? 'true' : 'false'}
+              onChange={(e) => setEditIsActive(e.target.value === 'true')}
+              options={[
+                { value: 'true', label: 'Active Personnel' },
+                { value: 'false', label: 'Deactivated / Relieved' }
+              ]}
+            />
+          </div>
+
+          <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingStaff(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              isLoading={editSubmitting}
+            >
+              Update Staff Record
             </Button>
           </div>
         </form>

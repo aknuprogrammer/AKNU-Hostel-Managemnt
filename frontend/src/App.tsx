@@ -5,8 +5,8 @@ import { Navbar } from './components/Navbar.js';
 import { Sidebar, ActiveTab } from './components/Sidebar.js';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { DigitalIdCardModal } from './components/DigitalIdCardModal.js';
+import { SetupPasswordModal } from './components/SetupPasswordModal.js';
 import { AknuLogo } from './components/AknuLogo.js';
-
 import { DashboardPage } from './pages/DashboardPage.js';
 import { MealScannerPage } from './pages/MealScannerPage.js';
 import { StudentsPage } from './pages/StudentsPage.js';
@@ -20,9 +20,35 @@ import { StaffRecordsPage } from './pages/StaffRecordsPage.js';
 
 import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
+const VALID_TABS: ActiveTab[] = [
+  'dashboard',
+  'meal-scanner',
+  'students',
+  'hostels',
+  'staff-records',
+  'leave',
+  'complaints',
+  'mess',
+  'accounts',
+  'security',
+  'my-id'
+];
+
+const getTabFromUrl = (): ActiveTab => {
+  const path = window.location.pathname.replace(/^\/+/, '').split('/')[0];
+  const hash = window.location.hash.replace(/^#\/?/, '').split('/')[0];
+  const candidate = (path || hash).toLowerCase();
+
+  if (candidate === 'staff') return 'staff-records';
+  if (VALID_TABS.includes(candidate as ActiveTab)) {
+    return candidate as ActiveTab;
+  }
+  return 'dashboard';
+};
+
 export const App: React.FC = () => {
   const { user, loading, login, quickSwitchRole } = useAuth();
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(getTabFromUrl);
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -32,6 +58,31 @@ export const App: React.FC = () => {
       return false;
     }
   });
+
+  const handleSelectTab = (tab: ActiveTab) => {
+    // If student, prevent navigation to dashboard
+    if (user?.role === 'student' && tab === 'dashboard') {
+      tab = 'mess';
+    }
+    setActiveTabState(tab);
+    const targetUrl = tab === 'dashboard' ? '/' : `/${tab}`;
+    if (window.location.pathname !== targetUrl) {
+      window.history.pushState({ tab }, '', targetUrl);
+    }
+  };
+
+  React.useEffect(() => {
+    const handlePopState = () => {
+      const tab = getTabFromUrl();
+      if (user?.role === 'student' && tab === 'dashboard') {
+        setActiveTabState('mess');
+      } else {
+        setActiveTabState(tab);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [user?.role]);
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed((prev) => {
@@ -47,6 +98,7 @@ export const App: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -63,6 +115,26 @@ export const App: React.FC = () => {
     }
   };
 
+  // Role-based initial page routing:
+  // - Students NEVER see Dashboard -> automatically route to 'mess' (Mess Operations)
+  // - Admins/Management -> guaranteed to start on 'dashboard'
+  React.useEffect(() => {
+    if (user) {
+      if (user.role === 'student') {
+        if (activeTab === 'dashboard' || window.location.pathname === '/' || window.location.pathname === '/dashboard') {
+          setActiveTabState('mess');
+          if (window.location.pathname !== '/mess') {
+            window.history.replaceState({ tab: 'mess' }, '', '/mess');
+          }
+        }
+      } else if (user.role === 'super_admin' || user.role === 'univ_mgmt') {
+        if (activeTab !== 'dashboard' && (window.location.pathname === '/' || window.location.pathname === '/dashboard')) {
+          setActiveTabState('dashboard');
+        }
+      }
+    }
+  }, [user?.id, user?.role, activeTab]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -78,9 +150,9 @@ export const App: React.FC = () => {
   if (!user) {
     return (
       <div className="min-h-screen bg-[#F7F3ED] flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="max-w-5xl w-full bg-white rounded-lg shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 border border-[#DED8CF]">
+        <div className="max-w-5xl w-full bg-white rounded-lg shadow-2xl overflow-hidden grid grid-cols-1 lg:grid-cols-2 border border-[#DED8CF]">
           {/* Left Hero side */}
-          <div className="lg:col-span-5 bg-gradient-to-br from-[#23395D] via-[#192B47] to-[#151A22] text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden">
+          <div className="bg-gradient-to-br from-[#23395D] via-[#192B47] to-[#151A22] text-white p-8 sm:p-10 flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 w-80 h-80 bg-[#92582F]/20 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 space-y-6">
@@ -102,15 +174,6 @@ export const App: React.FC = () => {
               <p className="text-sm text-[#DCE5F1] leading-relaxed">
                 Centralized boys' and girls' hostel allocation system, biometric-verifiable cryptographic meal QR credentials, and university residential governance.
               </p>
-
-              <div className="pt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-[#F0E0D2]">
-                <span className="px-2.5 py-1 rounded-md bg-[#354D70]/60 border border-[#A9C0E4]/30">
-                  Godavari & Krishna Bhavan
-                </span>
-                <span className="px-2.5 py-1 rounded-md bg-[#354D70]/60 border border-[#A9C0E4]/30">
-                  Saraswati & Gautami Bhavan
-                </span>
-              </div>
             </div>
 
             <div className="relative z-10 pt-8 mt-6 border-t border-[#354D70] text-xs text-[#A9C0E4] space-y-0.5">
@@ -119,8 +182,8 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Login & 1-Click Role Presets */}
-          <div className="lg:col-span-7 p-8 sm:p-10 flex flex-col justify-between space-y-6 bg-white">
+          {/* Right Login side */}
+          <div className="p-8 sm:p-10 flex flex-col justify-between space-y-6 bg-white">
             <div>
               <h2 className="text-2xl sm:text-3xl font-black text-[#202B3C]">
                 Sign In to Your Account
@@ -139,14 +202,14 @@ export const App: React.FC = () => {
               <form onSubmit={handleLoginFormSubmit} className="mt-6 space-y-4">
                 <div>
                   <label className="text-sm font-bold text-[#202B3C] block mb-1.5">
-                    University Email Address
+                    University Email Address or Roll Number
                   </label>
                   <div className="relative">
                     <Mail className="w-5 h-5 text-[#737C89] absolute left-3.5 top-3.5" />
                     <input
                       required
-                      type="email"
-                      placeholder="e.g. admin@aknu.edu.in"
+                      type="text"
+                      placeholder="e.g. 22CSE042 or warden.boys@aknu.edu.in"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-sm text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5] focus:ring-2 focus:ring-[#5276A5]/20 shadow-xs"
@@ -192,43 +255,40 @@ export const App: React.FC = () => {
                   <span>{loggingIn ? 'Authenticating...' : 'Sign In to Portal'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
-              </form>
-            </div>
 
-            {/* 1-Click Role Login Shortcuts for Evaluators */}
-            <div className="pt-6 border-t border-[#E8E1D7]">
-              <div className="flex items-center justify-between mb-2.5">
-                <span className="text-xs font-bold text-[#737C89] uppercase tracking-wider">
-                  1-Click Active Role Logins
-                </span>
-                <span className="text-[11px] text-[#92582F] font-semibold bg-[#F0E0D2] px-2 py-0.5 rounded">
-                  Quick Access
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {Object.keys(ROLE_PRESETS).map((rKey) => {
-                  const r = ROLE_PRESETS[rKey];
-                  if (!r) return null;
-                  return (
-                    <button
-                      key={rKey}
-                      type="button"
-                      onClick={() => quickSwitchRole(rKey)}
-                      className="p-2.5 rounded-md bg-[#FCFAF7] hover:bg-[#F0E0D2]/50 border border-[#DED8CF] hover:border-[#92582F] text-left transition shadow-2xs hover:shadow-xs group"
-                    >
-                      <span className="text-xs font-bold text-[#202B3C] group-hover:text-[#92582F] block truncate">
-                        {r.label}
-                      </span>
-                      <span className="text-[10px] text-[#5C6675] font-mono block truncate mt-0.5">
-                        {r.email.split('@')[0]}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!email.trim() || !password) {
+                        setLoginError('Please enter your University Email or Roll Number and your Temporary Password in the fields above first, then click Change Password.');
+                        return;
+                      }
+                      setLoginError('');
+                      setShowSetupModal(true);
+                    }}
+                    className="text-xs font-semibold text-[#23395D] hover:text-[#92582F] hover:underline transition"
+                  >
+                    🔑 First-time user? Change password with temporary password
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
+
+        <SetupPasswordModal
+          isOpen={showSetupModal}
+          onClose={() => setShowSetupModal(false)}
+          onSuccess={(ident, newPass) => {
+            setEmail(ident);
+            setPassword(newPass);
+            // Optionally auto-login with newly set password
+            login(ident, newPass).catch(() => {});
+          }}
+          initialIdentifier={email}
+          initialTemporaryPassword={password}
+        />
       </div>
     );
   }
@@ -246,14 +306,14 @@ export const App: React.FC = () => {
       <div className="flex-1 flex w-full">
         <Sidebar
           activeTab={activeTab}
-          onSelectTab={setActiveTab}
+          onSelectTab={handleSelectTab}
           onOpenDigitalId={() => setShowDigitalId(true)}
           isCollapsed={isSidebarCollapsed}
           onToggleCollapse={toggleSidebar}
         />
 
         <main className={`flex-1 ${isSidebarCollapsed ? 'ml-20' : 'ml-64'} p-4 sm:p-5 lg:p-6 min-w-0 overflow-y-auto transition-all duration-300 ease-in-out`}>
-          {activeTab === 'dashboard' && <DashboardPage onNavigateTo={setActiveTab} />}
+          {activeTab === 'dashboard' && user.role !== 'student' && <DashboardPage onNavigateTo={handleSelectTab} />}
           {activeTab === 'meal-scanner' && <MealScannerPage />}
           {activeTab === 'students' && <StudentsPage />}
           {activeTab === 'hostels' && <HostelsPage />}
@@ -272,12 +332,14 @@ export const App: React.FC = () => {
         onClose={() => setShowRoleSwitcher(false)}
       />
 
-      {/* Student Digital ID Card Modal */}
-      <DigitalIdCardModal
-        student={user.student || null}
-        isOpen={showDigitalId}
-        onClose={() => setShowDigitalId(false)}
-      />
+      {/* Student Digital ID Card Modal - Only for Students */}
+      {user.role === 'student' && user.student && (
+        <DigitalIdCardModal
+          student={user.student}
+          isOpen={showDigitalId}
+          onClose={() => setShowDigitalId(false)}
+        />
+      )}
     </div>
   );
 };

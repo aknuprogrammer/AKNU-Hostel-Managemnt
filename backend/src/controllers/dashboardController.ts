@@ -109,6 +109,31 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       `)).rows;
     }
 
+    // Dynamic Hostels List for Dashboard
+    let hostelsListQuery = `
+      SELECT h.id, h.name, h.code, h.category, h.campus, h.total_capacity,
+             COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id), 0) as total_beds,
+             COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id AND b.status = 'occupied'), 0) as occupied_beds
+      FROM hostels h
+    `;
+    let hostelsListParams: any[] = [];
+    if (isScoped) {
+      hostelsListQuery += ` WHERE h.id IN (${placeholders})`;
+      hostelsListParams = [...assignedHostels];
+    } else if (gender) {
+      const allowedCat = req.user?.assignedCategory;
+      if (allowedCat === 'boys' || allowedCat === 'girls') {
+        hostelsListQuery += ` WHERE h.category = '${allowedCat}'`;
+      }
+    }
+    hostelsListQuery += ` ORDER BY h.category ASC, h.name ASC`;
+    const hostelsListResult = await executeQuery(hostelsListQuery, hostelsListParams);
+    const hostelsList = hostelsListResult.rows.map((h: any) => ({
+      ...h,
+      total_beds: parseInt(h.total_beds) || h.total_capacity || 0,
+      occupied_beds: parseInt(h.occupied_beds) || 0
+    }));
+
     // Role-specific metrics
     const stats: any = {
       totalStudents: studentCount,
@@ -123,6 +148,7 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       activeSession,
       announcements,
       recentAudits,
+      hostels: hostelsList,
       assignedCategory: req.user?.assignedCategory || 'all'
     };
 

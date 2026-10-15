@@ -14,7 +14,8 @@ import {
   UserMinus,
   Filter,
   CheckCircle2,
-  Layers
+  Layers,
+  Pencil
 } from 'lucide-react';
 import {
   Button,
@@ -71,6 +72,18 @@ export const HostelsPage: React.FC = () => {
     numFloors: 2,
     roomsPerFloor: 5,
     bedsPerRoom: 2
+  });
+
+  // Edit Hostel modal state
+  const [showEditHostelModal, setShowEditHostelModal] = useState(false);
+  const [editingHostel, setEditingHostel] = useState<Hostel | null>(null);
+  const [editHostelForm, setEditHostelForm] = useState({
+    name: '',
+    code: '',
+    category: 'boys' as 'boys' | 'girls',
+    campus: 'Main Campus, Rajahmundry',
+    chiefWardenId: 'usr-chief',
+    wardenId: 'usr-warden-bh'
   });
 
   // Add Room modal
@@ -245,6 +258,40 @@ export const HostelsPage: React.FC = () => {
       }
     } catch (err: any) {
       alert('Failed to create hostel: ' + err.message);
+    }
+  };
+
+  const handleOpenEditHostel = (h: Hostel) => {
+    setEditingHostel(h);
+    setEditHostelForm({
+      name: h.name,
+      code: h.code,
+      category: (h.category as 'boys' | 'girls') || 'boys',
+      campus: h.campus || 'Main Campus, Rajahmundry',
+      chiefWardenId: h.chief_warden_id || (h.category === 'girls' ? 'usr-chief-gh' : 'usr-chief'),
+      wardenId: h.category === 'girls' ? 'usr-warden-gh' : 'usr-warden-bh'
+    });
+    setShowEditHostelModal(true);
+  };
+
+  const handleUpdateHostel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingHostel) return;
+    try {
+      setLoading(true);
+      const res = await apiRequest<{ success: boolean; message: string }>(`/hostels/${editingHostel.id}`, {
+        method: 'PUT',
+        body: editHostelForm
+      });
+      if (res.success) {
+        setShowEditHostelModal(false);
+        setEditingHostel(null);
+        await fetchHostels();
+      }
+    } catch (err: any) {
+      alert('Failed to update hostel: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -449,7 +496,13 @@ export const HostelsPage: React.FC = () => {
                   <Badge variant={h.category === 'boys' ? 'primary' : 'neutral'}>
                     {h.code}
                   </Badge>
-                  <span className="text-[10px] text-slate-400 capitalize font-medium">{h.category}</span>
+                  <span className={`text-[10px] capitalize font-bold px-2 py-0.5 rounded ${
+                    h.category === 'girls'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-blue-50 text-blue-700 border border-blue-200'
+                  }`}>
+                    {h.category === 'girls' ? 'Girls Wing' : 'Boys Wing'}
+                  </span>
                 </div>
 
                 <h3 className="font-bold text-sm text-slate-800 mt-2">{h.name}</h3>
@@ -513,17 +566,29 @@ export const HostelsPage: React.FC = () => {
                 </span>
               </div>
 
-              {(selectedHostelObj.occupied_beds || 0) === 0 && (
-                <button
-                  type="button"
-                  title="Delete this empty hostel"
-                  onClick={handleDeleteHostel}
-                  className="text-xs text-rose-600 hover:text-rose-800 flex items-center gap-1 px-2.5 py-1 rounded border border-rose-200 hover:bg-rose-50 transition ml-2"
+              <div className="flex items-center gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  leftIcon={<Pencil className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenEditHostel(selectedHostelObj)}
+                  title="Edit Hostel Details & Wing"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Delete Hostel
-                </button>
-              )}
+                  Edit Hostel
+                </Button>
+
+                {(selectedHostelObj.occupied_beds || 0) === 0 && (
+                  <button
+                    type="button"
+                    title="Delete this empty hostel"
+                    onClick={handleDeleteHostel}
+                    className="text-xs text-rose-600 hover:text-rose-800 flex items-center gap-1 px-2.5 py-1 rounded border border-rose-200 hover:bg-rose-50 transition"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Hostel
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -609,16 +674,20 @@ export const HostelsPage: React.FC = () => {
             <Input
               required
               label="Hostel Name"
-              placeholder="e.g. Godavari Bhavan"
+              placeholder="e.g. University Hostel 1"
               value={newHostel.name}
               onChange={(e) => {
                 const name = e.target.value;
                 const autoCode = name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 4) || 'BH-1';
-                setNewHostel({
-                  ...newHostel,
+                const isGirls = /girl|women|ladies|\bgh\b/i.test(name);
+                setNewHostel((prev) => ({
+                  ...prev,
                   name,
-                  code: newHostel.code || autoCode
-                });
+                  code: prev.code || autoCode,
+                  category: isGirls ? 'girls' : prev.category,
+                  chiefWardenId: isGirls ? 'usr-chief-gh' : prev.chiefWardenId,
+                  wardenId: isGirls ? 'usr-warden-gh' : prev.wardenId
+                }));
               }}
             />
 
@@ -788,6 +857,99 @@ export const HostelsPage: React.FC = () => {
               variant="accent"
             >
               Create Hostel
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: EDIT HOSTEL */}
+      <Modal
+        isOpen={showEditHostelModal}
+        onClose={() => {
+          setShowEditHostelModal(false);
+          setEditingHostel(null);
+        }}
+        title={`Edit Hostel: ${editingHostel?.name || ''}`}
+        size="lg"
+        icon={<Pencil className="w-5 h-5 text-indigo-600" />}
+      >
+        <form onSubmit={handleUpdateHostel} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              required
+              label="Hostel Name"
+              value={editHostelForm.name}
+              onChange={(e) => setEditHostelForm({ ...editHostelForm, name: e.target.value })}
+            />
+
+            <Input
+              required
+              label="Hostel Short Code"
+              value={editHostelForm.code}
+              onChange={(e) => setEditHostelForm({ ...editHostelForm, code: e.target.value.toUpperCase() })}
+              className="uppercase font-mono font-bold"
+            />
+
+            <Select
+              label="Wing / Category"
+              value={editHostelForm.category}
+              onChange={(e) => {
+                const cat = e.target.value as 'boys' | 'girls';
+                setEditHostelForm({
+                  ...editHostelForm,
+                  category: cat,
+                  chiefWardenId: cat === 'girls' ? 'usr-chief-gh' : 'usr-chief',
+                  wardenId: cat === 'girls' ? 'usr-warden-gh' : 'usr-warden-bh'
+                });
+              }}
+            >
+              <option value="boys">Boys Wing (Male Students)</option>
+              <option value="girls">Girls Wing (Female Students)</option>
+            </Select>
+
+            <Input
+              label="Campus Location"
+              value={editHostelForm.campus}
+              onChange={(e) => setEditHostelForm({ ...editHostelForm, campus: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Chief Warden in Charge"
+              value={editHostelForm.chiefWardenId}
+              onChange={(e) => setEditHostelForm({ ...editHostelForm, chiefWardenId: e.target.value })}
+            >
+              <option value="usr-chief">Prof. M. Ramana (Chief Warden Boys)</option>
+              <option value="usr-chief-gh">Prof. K. Vijaya (Chief Warden Girls)</option>
+            </Select>
+
+            <Select
+              label="Hostel Warden"
+              value={editHostelForm.wardenId}
+              onChange={(e) => setEditHostelForm({ ...editHostelForm, wardenId: e.target.value })}
+            >
+              <option value="usr-warden-bh">Dr. P. Satyanarayana (Hostel Warden Boys)</option>
+              <option value="usr-warden-gh">Dr. S. Lakshmi (Hostel Warden Girls)</option>
+            </Select>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowEditHostelModal(false);
+                setEditingHostel(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+            >
+              Save Changes
             </Button>
           </div>
         </form>

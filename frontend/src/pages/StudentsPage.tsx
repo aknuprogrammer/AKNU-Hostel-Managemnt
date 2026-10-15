@@ -31,7 +31,16 @@ import {
   UserPlus,
   GraduationCap,
   MapPin,
-  Sparkles
+  Sparkles,
+  Pencil,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Eye,
+  Mail,
+  Phone
 } from 'lucide-react';
 
 interface AcademicDept {
@@ -86,10 +95,36 @@ export const StudentsPage: React.FC = () => {
   const [hostelFilter, setHostelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Modals
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'all'>(10);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   const [selectedStudentForId, setSelectedStudentForId] = useState<StudentProfile | null>(null);
+  const [viewingStudent, setViewingStudent] = useState<StudentProfile | null>(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Edit Student Modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<StudentProfile | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    phone: '',
+    email: '',
+    gender: 'male',
+    departmentId: '',
+    courseId: '',
+    yearOfStudy: 1,
+    currentSemester: 1,
+    permanentAddress: '',
+    guardianName: '',
+    guardianPhone: '',
+    messEligibility: true,
+    hostelStatus: 'active'
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // New Student Form
   const defaultGender = user?.assignedCategory === 'girls' ? 'female' : 'male';
@@ -128,7 +163,7 @@ export const StudentsPage: React.FC = () => {
     const d = departments.find((item) => item.id === deptId);
     let deptShort = d ? (d.code || d.name).replace(/[^A-Za-z0-9]/g, '').toUpperCase() : 'CSE';
 
-    return `AKNU/${liveYear}/${hostelShort}/${courseShort}/${deptShort}/001`;
+    return `AKNU/${liveYear}/${hostelShort}/${courseShort}/${deptShort}/0001`;
   };
 
   const syncRegNumber = async (
@@ -295,8 +330,12 @@ export const StudentsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchStudents();
+    setCurrentPage(1);
   }, [search, hostelFilter, statusFilter]);
+
+  useEffect(() => {
+    fetchStudents();
+  }, [search, hostelFilter, statusFilter, currentPage, pageSize]);
 
   const fetchStudents = async () => {
     try {
@@ -305,10 +344,23 @@ export const StudentsPage: React.FC = () => {
       if (search) params.append('search', search);
       if (hostelFilter) params.append('hostelId', hostelFilter);
       if (statusFilter) params.append('status', statusFilter);
+      params.append('page', String(currentPage));
+      params.append('limit', String(pageSize));
 
-      const res = await apiRequest<{ success: boolean; data: StudentProfile[] }>(`/students?${params.toString()}`);
+      const res = await apiRequest<{
+        success: boolean;
+        data: StudentProfile[];
+        pagination?: { page: number; limit: number; total: number; totalPages: number };
+      }>(`/students?${params.toString()}`);
       if (res.success) {
         setStudents(res.data);
+        if (res.pagination) {
+          setTotalRecords(res.pagination.total);
+          setTotalPages(res.pagination.totalPages);
+        } else {
+          setTotalRecords(res.data.length);
+          setTotalPages(1);
+        }
       }
     } catch (e) {
       console.error('Error fetching students:', e);
@@ -370,6 +422,66 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
+  const handleOpenEdit = (stu: StudentProfile) => {
+    setEditingStudent(stu);
+    setEditForm({
+      fullName: stu.full_name || '',
+      phone: stu.phone || '',
+      email: stu.email || '',
+      gender: stu.gender || 'male',
+      departmentId: stu.department_id || departments[0]?.id || '',
+      courseId: stu.course_id || courses[0]?.id || '',
+      yearOfStudy: stu.year_of_study || 1,
+      currentSemester: stu.current_semester || 1,
+      permanentAddress: stu.permanent_address || '',
+      guardianName: stu.guardian_name || '',
+      guardianPhone: stu.guardian_phone || '',
+      messEligibility: stu.mess_eligibility ?? true,
+      hostelStatus: stu.hostel_status || 'active'
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudent) return;
+    setIsUpdating(true);
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>(`/students/${editingStudent.id}`, {
+        method: 'PUT',
+        body: editForm
+      });
+      if (res.success) {
+        alert(res.message);
+        setShowEditModal(false);
+        setEditingStudent(null);
+        fetchStudents();
+      }
+    } catch (err: any) {
+      alert('Failed to update student: ' + err.message);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: string, studentName: string, rollNumber: string) => {
+    if (!confirm(`Are you sure you want to delete student "${studentName}" (${rollNumber})?\n\nThis will permanently remove their records, vacate any assigned beds, and deactivate their access.`)) return;
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>(`/students/${studentId}`, {
+        method: 'DELETE'
+      });
+      if (res.success) {
+        alert(res.message);
+        fetchStudents();
+      }
+    } catch (err: any) {
+      alert('Failed to delete student: ' + err.message);
+    }
+  };
+
+  const boysHostels = hostels.filter((h) => h.category === 'boys');
+  const girlsHostels = hostels.filter((h) => h.category === 'girls');
+
   return (
     <div className="space-y-3">
       {/* Top Page Header */}
@@ -400,7 +512,7 @@ export const StudentsPage: React.FC = () => {
             leftIcon={<UserPlus className="w-3.5 h-3.5" />}
             onClick={() => setShowCreateModal(true)}
           >
-            Add Student
+            Add Student 
           </Button>
         </div>
       </div>
@@ -418,7 +530,12 @@ export const StudentsPage: React.FC = () => {
           <span className="text-2xl font-black text-[#23395D] mt-1 block">
             {students.filter((s) => s.gender === 'male').length}
           </span>
-          <span className="text-[10px] text-blue-700 font-semibold mt-1 block">Godavari & Krishna Bhavan</span>
+          <span
+            className="text-[10px] text-blue-700 font-semibold mt-1 block truncate"
+            title={boysHostels.map((h) => h.name).join(', ')}
+          >
+            {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
+          </span>
         </div>
 
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
@@ -426,7 +543,12 @@ export const StudentsPage: React.FC = () => {
           <span className="text-2xl font-black text-[#23395D] mt-1 block">
             {students.filter((s) => s.gender === 'female').length}
           </span>
-          <span className="text-[10px] text-rose-700 font-semibold mt-1 block">Saraswati & Gautami Bhavan</span>
+          <span
+            className="text-[10px] text-rose-700 font-semibold mt-1 block truncate"
+            title={girlsHostels.map((h) => h.name).join(', ')}
+          >
+            {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
+          </span>
         </div>
 
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
@@ -453,9 +575,10 @@ export const StudentsPage: React.FC = () => {
           <Select
             value={hostelFilter}
             onChange={(e) => setHostelFilter(e.target.value)}
-            containerClassName="w-48"
+            containerClassName="w-56"
           >
-            <option value="">All Assigned Hostels</option>
+            <option value="">All Students (All Wings & Unassigned)</option>
+            <option value="unassigned">⏳ Unassigned to Bed / Room</option>
             {hostels.map((h) => (
               <option key={h.id} value={h.id}>
                 {h.name} ({h.code})
@@ -479,81 +602,73 @@ export const StudentsPage: React.FC = () => {
       <Table>
         <TableHeader>
           <tr>
-            <TableHead>Student Details</TableHead>
-            <TableHead>Roll / Reg No</TableHead>
-            <TableHead>Course & Program</TableHead>
-            <TableHead>Hostel & Room</TableHead>
-            <TableHead>Mess Dining Status</TableHead>
-            <TableHead>Contact & Address</TableHead>
-            <TableHead align="right">Credentials & Actions</TableHead>
+            <TableHead className="whitespace-nowrap">Student Details</TableHead>
+            <TableHead className="whitespace-nowrap">Roll No</TableHead>
+            <TableHead className="whitespace-nowrap">Course & Program</TableHead>
+            <TableHead className="whitespace-nowrap">Hostel & Room</TableHead>
+            <TableHead className="whitespace-nowrap">Mess Dining Status</TableHead>
+            <TableHead align="right" className="whitespace-nowrap">Credentials & Actions</TableHead>
           </tr>
         </TableHeader>
         <TableBody>
           {loading ? (
-            <TableLoading colSpan={7} message="Loading university student records..." />
+            <TableLoading colSpan={6} message="Loading university student records..." />
           ) : students.length === 0 ? (
-            <TableEmpty colSpan={7} message="No matching student records found." />
+            <TableEmpty colSpan={6} message="No matching student records found." />
           ) : (
             students.map((stu) => (
               <TableRow key={stu.id}>
-                <TableCell>
-                  <div className="flex items-center space-x-3">
-                    <img
-                      src={stu.photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&h=100&fit=crop'}
-                      alt={stu.full_name}
-                      className="w-9 h-9 rounded-full object-cover border border-slate-200"
-                    />
-                    <div>
-                      <span className="font-bold text-slate-800 text-sm block">{stu.full_name}</span>
-                      <span className="text-[11px] text-slate-500 capitalize">{stu.gender}</span>
-                    </div>
+                <TableCell className="whitespace-nowrap">
+                  <div className="whitespace-nowrap">
+                    <span className="font-bold text-slate-800 text-sm block whitespace-nowrap">{stu.full_name}</span>
+                    <span className="text-[11px] text-slate-500 capitalize whitespace-nowrap">{stu.gender}</span>
                   </div>
                 </TableCell>
 
-                <TableCell>
-                  <span className="font-mono font-bold text-aknu-blue block">{stu.roll_number}</span>
-                  <span className="font-mono text-[10px] text-slate-400 block">{stu.reg_number}</span>
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-mono font-bold text-aknu-blue block whitespace-nowrap">{stu.roll_number}</span>
                 </TableCell>
 
-                <TableCell>
-                  <span className="font-semibold text-slate-800 block truncate max-w-[170px]">
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-semibold text-slate-800 block whitespace-nowrap">
                     {stu.course_name || 'B.Tech Program'}
                   </span>
-                  <span className="text-[11px] text-[#92582F] font-bold block">
+                  <span className="text-[11px] text-[#92582F] font-bold block whitespace-nowrap">
                     Year {stu.year_of_study || Math.ceil((stu.current_semester || 1) / 2)} • Sem {stu.current_semester || 1}
                   </span>
                   {stu.department_name && (
-                    <span className="text-[10px] text-slate-400 block truncate max-w-[170px]">
+                    <span className="text-[10px] text-slate-400 block whitespace-nowrap">
                       {stu.department_name}
                     </span>
                   )}
                 </TableCell>
 
-                <TableCell>
-                  <span className="font-semibold text-slate-800 block">{stu.hostel_name || 'Unassigned'}</span>
-                  <span className="text-[11px] text-slate-500 block">
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-semibold text-slate-800 block whitespace-nowrap">{stu.hostel_name || 'Unassigned'}</span>
+                  <span className="text-[11px] text-slate-500 block whitespace-nowrap">
                     {stu.room_number ? `Rm ${stu.room_number} • ${stu.bed_number || 'Bed'}` : 'No Bed Allocation'}
                   </span>
                 </TableCell>
 
-                <TableCell>
-                  <Badge variant={stu.mess_eligibility ? 'success' : 'danger'} dot>
+                <TableCell className="whitespace-nowrap">
+                  <Badge variant={stu.mess_eligibility ? 'success' : 'danger'} dot className="whitespace-nowrap">
                     {stu.mess_eligibility ? 'Eligible (All)' : 'Disabled'}
                   </Badge>
                 </TableCell>
 
-                <TableCell>
-                  <span className="text-slate-700 block font-mono">{stu.phone}</span>
-                  <span className="text-[10px] text-slate-400 block truncate max-w-[140px]">{stu.email}</span>
-                  {stu.permanent_address && (
-                    <span className="text-[10px] text-slate-500 block truncate max-w-[140px] mt-0.5" title={stu.permanent_address}>
-                      📍 {stu.permanent_address}
-                    </span>
-                  )}
-                </TableCell>
+                <TableCell align="right" className="whitespace-nowrap">
+                  <div className="flex items-center justify-end space-x-1.5 whitespace-nowrap">
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      leftIcon={<Eye className="w-3.5 h-3.5 text-indigo-600" />}
+                      onClick={() => setViewingStudent(stu)}
+                      title="View Full Profile Details"
+                      className="bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200"
+                    >
+                      View
+                    </Button>
 
-                <TableCell align="right">
-                  <div className="flex items-center justify-end space-x-2">
                     <Button
                       variant="primary"
                       size="xs"
@@ -561,7 +676,7 @@ export const StudentsPage: React.FC = () => {
                       onClick={() => setSelectedStudentForId(stu)}
                       title="View Digital QR ID Card"
                     >
-                      Show ID
+                      ID
                     </Button>
 
                     <Button
@@ -572,6 +687,30 @@ export const StudentsPage: React.FC = () => {
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
                     </Button>
+
+                    {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => handleOpenEdit(stu)}
+                        title="Edit Student Profile"
+                        className="text-slate-600 hover:text-indigo-600 hover:bg-indigo-50"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
+
+                    {['super_admin', 'chief_warden'].includes(user?.role || '') && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => handleDeleteStudent(stu.id, stu.full_name, stu.roll_number)}
+                        title="Delete Student Record"
+                        className="text-slate-600 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -579,6 +718,266 @@ export const StudentsPage: React.FC = () => {
           )}
         </TableBody>
       </Table>
+
+      {/* Pagination Footer */}
+      <div className="bg-white rounded-lg p-3 sm:p-4 border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600 select-none">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-slate-500">Rows per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              const val = e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10);
+              setPageSize(val);
+              setCurrentPage(1);
+            }}
+            className="bg-white border border-slate-300 rounded-md px-2.5 py-1 text-xs font-bold text-[#23395D] focus:border-[#92582F] focus:ring-1 focus:ring-[#92582F] transition cursor-pointer"
+          >
+            <option value={10}>10</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value="all">All</option>
+          </select>
+
+          <span className="text-slate-300 mx-1">|</span>
+
+          <span className="text-slate-600">
+            {totalRecords === 0 ? (
+              '0 records'
+            ) : pageSize === 'all' ? (
+              <span>Showing all <strong className="text-slate-800">{totalRecords}</strong> records</span>
+            ) : (
+              <span>
+                Showing <strong className="text-slate-800">{(currentPage - 1) * (typeof pageSize === 'number' ? pageSize : 10) + 1}</strong> to{' '}
+                <strong className="text-slate-800">
+                  {Math.min(currentPage * (typeof pageSize === 'number' ? pageSize : 10), totalRecords)}
+                </strong>{' '}
+                of <strong className="text-slate-800">{totalRecords}</strong> records
+              </span>
+            )}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={currentPage <= 1 || pageSize === 'all'}
+            onClick={() => setCurrentPage(1)}
+            className="p-1.5 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer disabled:cursor-not-allowed"
+            title="First Page"
+          >
+            <ChevronsLeft className="w-4 h-4 text-slate-600" />
+          </button>
+          <button
+            type="button"
+            disabled={currentPage <= 1 || pageSize === 'all'}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className="p-1.5 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer disabled:cursor-not-allowed"
+            title="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4 text-slate-600" />
+          </button>
+
+          <span className="px-2.5 py-1 font-semibold text-slate-700 text-xs">
+            Page {pageSize === 'all' ? 1 : currentPage} of {pageSize === 'all' ? 1 : Math.max(1, totalPages)}
+          </span>
+
+          <button
+            type="button"
+            disabled={currentPage >= totalPages || pageSize === 'all'}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className="p-1.5 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer disabled:cursor-not-allowed"
+            title="Next Page"
+          >
+            <ChevronRight className="w-4 h-4 text-slate-600" />
+          </button>
+          <button
+            type="button"
+            disabled={currentPage >= totalPages || pageSize === 'all'}
+            onClick={() => setCurrentPage(totalPages)}
+            className="p-1.5 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer disabled:cursor-not-allowed"
+            title="Last Page"
+          >
+            <ChevronsRight className="w-4 h-4 text-slate-600" />
+          </button>
+        </div>
+      </div>
+
+      {/* STUDENT FULL DETAILS VIEW MODAL */}
+      <Modal
+        isOpen={!!viewingStudent}
+        onClose={() => setViewingStudent(null)}
+        title={viewingStudent ? `${viewingStudent.full_name} — Student Profile` : 'Student Details'}
+        subtitle={viewingStudent ? `Roll No: ${viewingStudent.roll_number} • Reg No: ${viewingStudent.reg_number}` : ''}
+        size="2xl"
+        icon={<Eye className="w-5 h-5 text-indigo-600" />}
+      >
+        {viewingStudent && (
+          <div className="space-y-4">
+            {/* Top Identity & Status Banner */}
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">{viewingStudent.full_name}</h3>
+                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                  <span className="font-mono font-bold text-aknu-blue">{viewingStudent.roll_number}</span>
+                  <span>•</span>
+                  <span className="capitalize">{viewingStudent.gender}</span>
+                  <span>•</span>
+                  <span>ID: <code className="text-slate-600">{viewingStudent.student_id_code}</code></span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={viewingStudent.hostel_status === 'active' ? 'success' : 'danger'}>
+                  {viewingStudent.hostel_status === 'active' ? 'Active Resident' : 'Vacated'}
+                </Badge>
+                <Badge variant={viewingStudent.mess_eligibility ? 'success' : 'danger'} dot>
+                  {viewingStudent.mess_eligibility ? 'Mess Eligible' : 'Mess Disabled'}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Grid 2-columns for Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              {/* Card 1: Academic Information */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3.5 space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Academic Information
+                </span>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Program / Degree:</span>
+                    <span className="font-bold text-slate-800">{viewingStudent.course_name || 'B.Tech Program'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Department:</span>
+                    <span className="font-semibold text-slate-800">{viewingStudent.department_name || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Year & Semester:</span>
+                    <span className="font-semibold text-[#92582F]">
+                      Year {viewingStudent.year_of_study || Math.ceil((viewingStudent.current_semester || 1) / 2)} • Semester {viewingStudent.current_semester || 1}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-500">Registration Number:</span>
+                    <span className="font-mono font-bold text-aknu-blue text-[11px]">{viewingStudent.reg_number}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Hostel & Room Allocation */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3.5 space-y-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Hostel & Room Allocation
+                </span>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Assigned Hostel:</span>
+                    <span className="font-bold text-slate-800">
+                      {viewingStudent.hostel_name ? `${viewingStudent.hostel_name} (${viewingStudent.hostel_code || ''})` : 'Unassigned'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Room & Bed:</span>
+                    <span className="font-semibold text-slate-800">
+                      {viewingStudent.room_number ? `Room ${viewingStudent.room_number} • ${viewingStudent.bed_number || 'Bed'}` : 'No Bed Allocation'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Allocation Status:</span>
+                    <span className="font-semibold text-slate-700">
+                      {viewingStudent.allocation_id ? 'Active Room Allocation' : 'Pending Allocation'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-500">QR Status:</span>
+                    <span className="font-mono text-emerald-700 font-bold uppercase">{viewingStudent.qr_status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Contact & Address */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3.5 space-y-2 md:col-span-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Contact & Guardian Information
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" /> Phone:</span>
+                      <span className="font-mono font-semibold text-slate-800">{viewingStudent.phone || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" /> Email:</span>
+                      <span className="font-mono font-semibold text-slate-800">{viewingStudent.email || 'N/A'}</span>
+                    </div>
+                    <div className="py-1">
+                      <span className="text-slate-500 flex items-center gap-1.5 mb-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> Permanent Address:</span>
+                      <p className="text-slate-800 bg-slate-50 p-2 rounded border border-slate-200 text-xs leading-relaxed">
+                        {viewingStudent.permanent_address || 'No permanent address recorded'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Guardian Name:</span>
+                      <span className="font-semibold text-slate-800">{viewingStudent.guardian_name || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Guardian Phone:</span>
+                      <span className="font-mono font-semibold text-slate-800">{viewingStudent.guardian_phone || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-500">Emergency Contact:</span>
+                      <span className="font-mono text-slate-700">{viewingStudent.emergency_contact || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+              <Button
+                variant="primary"
+                size="sm"
+                leftIcon={<QrCode className="w-4 h-4 text-amber-300" />}
+                onClick={() => {
+                  const target = viewingStudent;
+                  setViewingStudent(null);
+                  setSelectedStudentForId(target);
+                }}
+              >
+                View Digital QR ID Card
+              </Button>
+
+              <div className="flex items-center gap-2">
+                {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Pencil className="w-3.5 h-3.5" />}
+                    onClick={() => {
+                      const target = viewingStudent;
+                      setViewingStudent(null);
+                      handleOpenEdit(target);
+                    }}
+                  >
+                    Edit Profile
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setViewingStudent(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* DIGITAL ID CARD MODAL */}
       <DigitalIdCardModal
@@ -788,7 +1187,7 @@ export const StudentsPage: React.FC = () => {
                     required
                     value={newStudent.regNumber}
                     onChange={(e) => setNewStudent({ ...newStudent, regNumber: e.target.value.toUpperCase() })}
-                    placeholder="AKNU/2026/BH1/BTECH/CSE/001"
+                    placeholder="AKNU/2026/BH1/BTECH/CSE/0001"
                     className="w-full bg-white border border-slate-300 rounded-md text-xs px-3 py-2.5 font-mono font-bold tracking-wider uppercase text-[#23395D] focus:border-[#92582F] focus:ring-2 focus:ring-[#92582F]/20 pr-9 transition"
                   />
                   <button
@@ -904,6 +1303,184 @@ export const StudentsPage: React.FC = () => {
               variant="accent"
             >
               Register Student & Sign QR
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT STUDENT MODAL */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingStudent(null);
+        }}
+        title={`Edit Student Profile: ${editingStudent?.full_name || ''}`}
+        subtitle={`Roll Number: ${editingStudent?.roll_number || ''} • Reg: ${editingStudent?.reg_number || ''}`}
+        icon={<Pencil className="w-5 h-5 text-indigo-600" />}
+        size="2xl"
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              required
+              label="Full Name *"
+              placeholder="e.g. K. Sai Teja"
+              value={editForm.fullName}
+              onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+            />
+
+            <Select
+              label="Gender *"
+              value={editForm.gender}
+              onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+            >
+              <option value="male">Male (Boys Wing)</option>
+              <option value="female">Female (Girls Wing)</option>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Input
+              required
+              type="email"
+              label="University Email *"
+              placeholder="saiteja@aknu.edu.in"
+              value={editForm.email}
+              onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+            />
+
+            <Input
+              required
+              type="tel"
+              label="Contact Mobile Phone *"
+              placeholder="10-digit mobile"
+              value={editForm.phone}
+              onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+              className="font-mono"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Department *"
+              value={editForm.departmentId}
+              onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value })}
+            >
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.code})
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="Course / Degree *"
+              value={editForm.courseId}
+              onChange={(e) => setEditForm({ ...editForm, courseId: e.target.value })}
+            >
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.code})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Year of Study *"
+              value={editForm.yearOfStudy}
+              onChange={(e) => {
+                const yr = parseInt(e.target.value) || 1;
+                setEditForm({ ...editForm, yearOfStudy: yr, currentSemester: yr * 2 - 1 });
+              }}
+            >
+              <option value={1}>1st Year (Fresher)</option>
+              <option value={2}>2nd Year</option>
+              <option value={3}>3rd Year</option>
+              <option value={4}>4th Year (Final)</option>
+            </Select>
+
+            <Select
+              label="Current Semester *"
+              value={editForm.currentSemester}
+              onChange={(e) => setEditForm({ ...editForm, currentSemester: parseInt(e.target.value) || 1 })}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                <option key={s} value={s}>
+                  Semester {s}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Hostel Resident Status"
+              value={editForm.hostelStatus}
+              onChange={(e) => setEditForm({ ...editForm, hostelStatus: e.target.value })}
+            >
+              <option value="active">Active Resident</option>
+              <option value="vacated">Vacated / Checked Out</option>
+              <option value="suspended">Suspended</option>
+            </Select>
+
+            <Select
+              label="Mess Dining Eligibility"
+              value={editForm.messEligibility ? 'true' : 'false'}
+              onChange={(e) => setEditForm({ ...editForm, messEligibility: e.target.value === 'true' })}
+            >
+              <option value="true">Eligible for All Meals</option>
+              <option value="false">Mess Access Disabled</option>
+            </Select>
+          </div>
+
+          <Textarea
+            label="Permanent Home Address"
+            placeholder="Door No, Street, Village/Town, Mandal, District, PIN Code"
+            value={editForm.permanentAddress}
+            onChange={(e) => setEditForm({ ...editForm, permanentAddress: e.target.value })}
+            rows={2}
+          />
+
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-800">Emergency & Guardian Contacts</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Parent / Guardian Name"
+                placeholder="Father / Guardian Name"
+                value={editForm.guardianName}
+                onChange={(e) => setEditForm({ ...editForm, guardianName: e.target.value })}
+              />
+              <Input
+                type="tel"
+                label="Parent / Guardian Phone"
+                placeholder="Parent Contact Number"
+                value={editForm.guardianPhone}
+                onChange={(e) => setEditForm({ ...editForm, guardianPhone: e.target.value })}
+                className="font-mono"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingStudent(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={isUpdating}
+            >
+              {isUpdating ? 'Saving Changes...' : 'Save Student Changes'}
             </Button>
           </div>
         </form>

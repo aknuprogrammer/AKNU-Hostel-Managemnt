@@ -31,16 +31,13 @@ interface DashboardStats {
   activeSession: any;
   announcements: any[];
   recentAudits: any[];
+  hostels?: any[];
 }
 
 export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ onNavigateTo }) => {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
 
   const fetchStats = async () => {
     try {
@@ -54,6 +51,18 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (user?.role === 'student') {
+      onNavigateTo('mess');
+      return;
+    }
+    fetchStats();
+  }, [user?.role]);
+
+  if (user?.role === 'student') {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -72,12 +81,6 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
         <div className="absolute right-0 top-0 bottom-0 w-96 bg-gradient-to-l from-[#92582F]/20 to-transparent pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <div className="flex items-center gap-2 mb-1.5">
-              <Badge variant="accent">
-                {user?.roleDisplay}
-              </Badge>
-              <span className="text-xs text-[#DCE5F1]">AKNU Main Campus Rajahmundry</span>
-            </div>
             <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
               Welcome back, {user?.fullName}!
             </h1>
@@ -251,53 +254,42 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
           </Button>
         </div>
 
-        <div className={`grid grid-cols-1 md:grid-cols-2 ${user?.assignedCategory === 'all' ? 'lg:grid-cols-4' : 'lg:grid-cols-2'} gap-2 sm:gap-2.5`}>
-          {(user?.assignedCategory === 'boys' || user?.assignedCategory === 'all') && (
-            <>
-              <div className="p-4 rounded-md border border-blue-100/80 bg-blue-50/30">
-                <div className="flex items-center justify-between">
-                  <Badge variant="primary">BH-1</Badge>
-                  <span className="text-[11px] text-slate-500">Boys' Wing</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
+          {stats?.hostels && stats.hostels.length > 0 ? (
+            stats.hostels.map((h: any) => {
+              const occRate = h.total_beds > 0 ? Math.round((h.occupied_beds / h.total_beds) * 100) : 0;
+              const isBoys = h.category === 'boys';
+              return (
+                <div
+                  key={h.id}
+                  onClick={() => onNavigateTo('hostels')}
+                  className={`p-4 rounded-md border cursor-pointer hover:shadow-xs transition ${
+                    isBoys ? 'border-blue-100/80 bg-blue-50/30' : 'border-purple-100/80 bg-purple-50/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Badge variant={isBoys ? 'primary' : 'neutral'}>{h.code || (isBoys ? 'BH' : 'GH')}</Badge>
+                    <span className="text-[11px] text-slate-500 font-medium capitalize">
+                      {isBoys ? "Boys' Wing" : "Girls' Wing"}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-sm text-slate-800 mt-2 truncate" title={h.name}>
+                    {h.name}
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Capacity: {h.total_beds} beds • {h.occupied_beds} occupied ({occRate}%)
+                  </p>
+                  <div className="mt-2 text-xs font-semibold text-emerald-600 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                    Active Residential Wing
+                  </div>
                 </div>
-                <h4 className="font-bold text-sm text-slate-800 mt-2">Godavari Bhavan</h4>
-                <p className="text-xs text-slate-500 mt-0.5">Capacity: 300 residents</p>
-                <div className="mt-2 text-xs font-semibold text-emerald-600">Active • Mess Counter 1</div>
-              </div>
-
-              <div className="p-4 rounded-md border border-blue-100/80 bg-blue-50/30">
-                <div className="flex items-center justify-between">
-                  <Badge variant="primary">BH-2</Badge>
-                  <span className="text-[11px] text-slate-500">Boys' Wing</span>
-                </div>
-                <h4 className="font-bold text-sm text-slate-800 mt-2">Krishna Bhavan</h4>
-                <p className="text-xs text-slate-500 mt-0.5">Capacity: 250 residents</p>
-                <div className="mt-2 text-xs font-semibold text-emerald-600">Active • Mess Counter 2</div>
-              </div>
-            </>
-          )}
-
-          {(user?.assignedCategory === 'girls' || user?.assignedCategory === 'all') && (
-            <>
-              <div className="p-4 rounded-md border border-purple-100/80 bg-purple-50/30">
-                <div className="flex items-center justify-between">
-                  <Badge variant="neutral">GH-1</Badge>
-                  <span className="text-[11px] text-slate-500">Girls' Wing</span>
-                </div>
-                <h4 className="font-bold text-sm text-slate-800 mt-2">Saraswati Bhavan</h4>
-                <p className="text-xs text-slate-500 mt-0.5">Capacity: 350 residents</p>
-                <div className="mt-2 text-xs font-semibold text-emerald-600">Active • Girls' Mess</div>
-              </div>
-
-              <div className="p-4 rounded-md border border-purple-100/80 bg-purple-50/30">
-                <div className="flex items-center justify-between">
-                  <Badge variant="neutral">GH-2</Badge>
-                  <span className="text-[11px] text-slate-500">Girls' Wing</span>
-                </div>
-                <h4 className="font-bold text-sm text-slate-800 mt-2">Gautami Bhavan</h4>
-                <p className="text-xs text-slate-500 mt-0.5">Capacity: 200 residents</p>
-                <div className="mt-2 text-xs font-semibold text-emerald-600">Active • Extended Wing</div>
-              </div>
-            </>
+              );
+            })
+          ) : (
+            <div className="col-span-full py-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg">
+              No hostels registered in this category yet. Click "View All Hostels" to create one.
+            </div>
           )}
         </div>
       </div>

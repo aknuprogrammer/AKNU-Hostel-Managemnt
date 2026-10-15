@@ -19,6 +19,13 @@ import {
 
 export const MessPage: React.FC = () => {
   const { user } = useAuth();
+  const isStudent = user?.role === 'student';
+  const isGirlsStudent = isStudent && (
+    user?.student?.gender?.toLowerCase() === 'female' ||
+    (user?.student?.hostel_name || '').toLowerCase().includes('girl') ||
+    user?.assignedCategory === 'girls'
+  );
+
   const [activeSubTab, setActiveSubTab] = useState<'menu' | 'inventory' | 'wastage'>('menu');
   const [selectedDay, setSelectedDay] = useState('Monday');
   const [hostels, setHostels] = useState<any[]>([]);
@@ -55,13 +62,32 @@ export const MessPage: React.FC = () => {
       if (res.success) {
         setHostels(res.data);
         if (res.data.length > 0) {
-          setSelectedHostel((prev) => prev || res.data[0].id);
+          if (isStudent) {
+            const matched = isGirlsStudent
+              ? res.data.find((h) => h.category === 'girls' || h.name.toLowerCase().includes('girl'))
+              : res.data.find((h) => h.category === 'boys' || h.name.toLowerCase().includes('boy'));
+            setSelectedHostel(matched?.id || res.data[0].id);
+          } else {
+            setSelectedHostel((prev) => prev || res.data[0].id);
+          }
         }
       }
     } catch (e) {
       console.error('Error fetching hostels:', e);
     }
   };
+
+  // Enforce student's exact hostel lock
+  useEffect(() => {
+    if (isStudent && hostels.length > 0) {
+      const matched = isGirlsStudent
+        ? hostels.find((h) => h.category === 'girls' || h.name.toLowerCase().includes('girl'))
+        : hostels.find((h) => h.category === 'boys' || h.name.toLowerCase().includes('boy'));
+      if (matched && selectedHostel !== matched.id) {
+        setSelectedHostel(matched.id);
+      }
+    }
+  }, [isStudent, isGirlsStudent, hostels]);
 
   useEffect(() => {
     if (selectedHostel) {
@@ -92,6 +118,7 @@ export const MessPage: React.FC = () => {
   };
 
   const fetchInventory = async () => {
+    if (isStudent) return; // Never fetch or expose inventory for students
     try {
       const res = await apiRequest<{ success: boolean; data: InventoryItem[] }>(
         `/mess/inventory?hostelId=${selectedHostel}`
@@ -145,57 +172,78 @@ export const MessPage: React.FC = () => {
   };
 
   const isMessManager = ['super_admin', 'mess_manager'].includes(user?.role || '');
+  const currentHostelObj = hostels.find((h) => h.id === selectedHostel);
 
   return (
     <div className="space-y-3">
       {/* Top Header */}
       <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900">Mess Operations & Dining Menus</h1>
+          <h1 className="text-xl font-extrabold text-slate-900">
+            {isStudent ? 'Dining Menus & Mess Schedule' : 'Mess Operations & Dining Menus'}
+          </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Weekly menu management, grocery stock replenishment, and daily kitchen food wastage logs.
+            {isStudent
+              ? `Daily timetable and meal schedule for ${currentHostelObj?.name || (isGirlsStudent ? 'Girls Hostel' : 'International Boys Hostel')}.`
+              : 'Weekly menu management, grocery stock replenishment, and daily kitchen food wastage logs.'}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {hostels.length > 0 && (
-            <div className="w-52">
-              <Select
-                value={selectedHostel}
-                onChange={(e) => setSelectedHostel(e.target.value)}
-                options={hostels.map((h) => ({
-                  value: h.id,
-                  label: `${h.name} (${h.code})`
-                }))}
-              />
+          {/* For students: REMOVE DROPDOWN. Display allocated hostel badge instead */}
+          {isStudent ? (
+            <div className="flex items-center space-x-2 bg-[#F7F3ED] border border-[#DED8CF] px-3.5 py-2 rounded-lg">
+              <span className="text-xs font-black text-[#202B3C]">
+                🏢 {currentHostelObj?.name || (isGirlsStudent ? 'Girls Hostel' : 'International Boys Hostel')}
+              </span>
+              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-[#E0AD83]/20 text-[#92582F] border border-[#E0AD83]/50">
+                {isGirlsStudent ? 'Girls Dining Counter' : 'Boys Dining Counter'}
+              </span>
             </div>
+          ) : (
+            /* For staff / wardens / admins: Hostel Selector Dropdown */
+            hostels.length > 0 && (
+              <div className="w-56">
+                <Select
+                  value={selectedHostel}
+                  onChange={(e) => setSelectedHostel(e.target.value)}
+                  options={hostels.map((h) => ({
+                    value: h.id,
+                    label: `${h.name} (${h.code})`
+                  }))}
+                />
+              </div>
+            )
           )}
 
-          <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-md text-xs font-semibold">
-            <Button
-              size="sm"
-              variant={activeSubTab === 'menu' ? 'primary' : 'ghost'}
-              onClick={() => setActiveSubTab('menu')}
-            >
-              Dining Menus
-            </Button>
-            <Button
-              size="sm"
-              variant={activeSubTab === 'inventory' ? 'primary' : 'ghost'}
-              onClick={() => setActiveSubTab('inventory')}
-            >
-              Inventory Stock
-            </Button>
-            {isMessManager && (
+          {/* Sub-tab buttons: NEVER shown to students */}
+          {!isStudent && (
+            <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-md text-xs font-semibold">
               <Button
                 size="sm"
-                variant={activeSubTab === 'wastage' ? 'primary' : 'ghost'}
-                onClick={() => setActiveSubTab('wastage')}
+                variant={activeSubTab === 'menu' ? 'primary' : 'ghost'}
+                onClick={() => setActiveSubTab('menu')}
               >
-                Food Wastage
+                Dining Menus
               </Button>
-            )}
-          </div>
+              <Button
+                size="sm"
+                variant={activeSubTab === 'inventory' ? 'primary' : 'ghost'}
+                onClick={() => setActiveSubTab('inventory')}
+              >
+                Inventory Stock
+              </Button>
+              {isMessManager && (
+                <Button
+                  size="sm"
+                  variant={activeSubTab === 'wastage' ? 'primary' : 'ghost'}
+                  onClick={() => setActiveSubTab('wastage')}
+                >
+                  Food Wastage
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -248,8 +296,8 @@ export const MessPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 2: INVENTORY STOCK */}
-      {activeSubTab === 'inventory' && (
+      {/* TAB 2: INVENTORY STOCK - NEVER RENDERED FOR STUDENTS */}
+      {!isStudent && activeSubTab === 'inventory' && (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
           <div className="flex items-center justify-between">
             <div>
@@ -318,8 +366,8 @@ export const MessPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: FOOD WASTAGE LOG */}
-      {activeSubTab === 'wastage' && (
+      {/* TAB 3: FOOD WASTAGE LOG - NEVER RENDERED FOR STUDENTS */}
+      {!isStudent && activeSubTab === 'wastage' && (
         <div className="bg-white rounded-lg p-6 border border-slate-200 shadow-sm max-w-xl space-y-4">
           <div>
             <h3 className="font-bold text-base text-slate-900">Daily Kitchen Food Wastage Register</h3>

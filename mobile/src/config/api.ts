@@ -1,11 +1,19 @@
 import { Platform } from 'react-native';
 
-// In Android emulator, 10.0.2.2 points to host machine localhost:5000. On physical devices, host machine LAN IP.
-export const API_BASE_URL = Platform.select({
-  android: 'http://10.0.2.2:5000/api/v1',
-  ios: 'http://localhost:5000/api/v1',
-  default: 'http://localhost:5000/api/v1'
-});
+// Default to Wi-Fi host IP for physical device testing, with 10.0.2.2 for Android emulator
+let customBaseUrl = 'http://192.168.29.54:5000/api/v1';
+
+export function getApiBaseUrl(): string {
+  return customBaseUrl;
+}
+
+export function setApiBaseUrl(url: string) {
+  let cleaned = url.trim().replace(/\/+$/, '');
+  if (!cleaned.endsWith('/api/v1')) {
+    cleaned = `${cleaned}/api/v1`;
+  }
+  customBaseUrl = cleaned;
+}
 
 let authToken: string | null = null;
 
@@ -27,7 +35,7 @@ export async function mobileApiRequest<T = any>(endpoint: string, options: any =
     headers['Authorization'] = `Bearer ${authToken}`;
   }
 
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
     method: options.method || 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined

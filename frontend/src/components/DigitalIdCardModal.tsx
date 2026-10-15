@@ -105,65 +105,61 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
               <p className="text-[9px] text-[#5C6675]">Main Campus, Rajahmundry • 2026-2027</p>
             </div>
 
-            {/* Student Photo & QR Grid */}
-            <div className="mt-4 flex flex-col items-center">
-              <div className="relative">
-                <img
-                  src={student.photo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop'}
-                  alt={student.full_name}
-                  className="w-24 h-24 rounded-md object-cover border-2 border-aknu-navy shadow-md"
-                />
-                <span className="absolute -bottom-2 -right-1 bg-emerald-500 text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow">
-                  Active
-                </span>
-              </div>
+            {/* Horizontal Layout: Text on Left, QR Code on Right */}
+            <div className="mt-4 flex flex-col sm:flex-row items-center sm:items-stretch gap-5">
+              {/* Left Column: Student Details */}
+              <div className="flex-1 flex flex-col justify-between space-y-3 w-full">
+                <div>
+                  <span className="text-[10px] font-bold tracking-wider text-[#92582F] uppercase block mb-1">
+                    Hostel Resident
+                  </span>
+                  <h4 className="text-lg font-black text-[#202B3C] leading-tight">
+                    {student.full_name}
+                  </h4>
+                  <div className="mt-1.5 inline-flex items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-[#5C6675]">Roll No:</span>
+                    <span className="font-mono text-xs font-bold text-[#23395D] bg-[#F0E0D2]/50 px-2.5 py-0.5 rounded border border-[#92582F]/30">
+                      {student.roll_number}
+                    </span>
+                  </div>
+                </div>
 
-              <div className="mt-3 text-center">
-                <h4 className="text-base font-bold text-slate-900 leading-snug">{student.full_name}</h4>
-                <div className="flex items-center justify-center gap-2 mt-0.5">
-                  <span className="font-mono text-xs font-bold text-aknu-blue bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                    {student.roll_number}
-                  </span>
-                  <span className="font-mono text-xs text-slate-500">
-                    {student.reg_number}
-                  </span>
+                {/* Hostel & Room Info */}
+                <div className="space-y-1.5 text-xs">
+                  <div className="bg-[#FCFAF7] p-2 rounded border border-[#DED8CF]">
+                    <span className="text-[10px] text-[#737C89] font-medium block">Hostel Wing</span>
+                    <span className="font-bold text-[#202B3C] truncate block">
+                      {student.hostel_name || 'Godavari Bhavan'}
+                    </span>
+                  </div>
+                  <div className="bg-[#FCFAF7] p-2 rounded border border-[#DED8CF]">
+                    <span className="text-[10px] text-[#737C89] font-medium block">Room & Bed</span>
+                    <span className="font-bold text-[#202B3C] block">
+                      {student.room_number ? `Room ${student.room_number} • Bed ${student.bed_number || '1'}` : 'Room 101 • Bed 1'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Mess Status Pill */}
+                <div className="bg-[#DCFCE7] text-[#166534] text-[11px] font-bold py-1.5 px-3 rounded border border-[#86EFAC]/60 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#166534]" />
+                  <span>MESS ACTIVE • ALL MEALS</span>
                 </div>
               </div>
 
-              {/* Verified QR Code */}
-              <div className="mt-4 p-3 bg-white border-2 border-slate-800/80 rounded-md shadow-inner flex flex-col items-center">
+              {/* Right Column: Prominent QR Code */}
+              <div className="flex flex-col items-center justify-center p-3.5 bg-white border-2 border-[#23395D] rounded-lg shadow-sm">
                 <QRCodeSVG
-                  value={student.qr_credential_token}
-                  size={150}
+                  value={student.qr_credential_token || student.roll_number}
+                  size={140}
                   level="H"
                   includeMargin={false}
                   fgColor="#0f2744"
                 />
-                <span className="mt-1.5 text-[9px] font-mono text-slate-400 tracking-widest uppercase">
-                  Digital HMAC-SHA256 Token
+                <span className="mt-2 text-[9px] font-mono text-[#5C6675] tracking-widest uppercase">
+                  HMAC-SHA256 Token
                 </span>
-              </div>
-
-              {/* Allocation Info Badges */}
-              <div className="w-full mt-4 grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-slate-50 p-2 rounded-md border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block font-medium">Hostel</span>
-                  <span className="font-bold text-slate-800 truncate block">
-                    {student.hostel_name || 'Godavari Bhavan'}
-                  </span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded-md border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block font-medium">Room / Bed</span>
-                  <span className="font-bold text-slate-800 block">
-                    {student.room_number ? `Room ${student.room_number}` : 'Room 101'} • {student.bed_number || 'Bed 1'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Mess Status */}
-              <div className="w-full mt-2 bg-emerald-50 text-emerald-800 text-[11px] font-semibold py-1 px-3 rounded-md flex items-center justify-between border border-emerald-200">
-                <span>Mess Dining Eligibility:</span>
-                <span className="font-bold uppercase tracking-wider text-emerald-700">All Sessions Active</span>
+                <span className="text-[8px] text-[#737C89] mt-0.5">Scan at Dining Counter</span>
               </div>
             </div>
           </div>
