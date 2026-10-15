@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { apiRequest } from '../services/api.js';
 import { Complaint } from '../types.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { AlertCircle, Plus, CheckCircle2, Star, Clock, Wrench } from 'lucide-react';
 import {
   Button,
@@ -14,6 +15,7 @@ import {
 
 export const ComplaintsPage: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useConfirm();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -61,13 +63,13 @@ export const ComplaintsPage: React.FC = () => {
         body: newComplaint
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Complaint Lodged');
         setShowCreateModal(false);
         setNewComplaint({ category: 'water', description: '', priority: 'medium' });
         fetchComplaints();
       }
     } catch (err: any) {
-      alert('Error lodging complaint: ' + err.message);
+      await showError('Error lodging complaint: ' + err.message);
     }
   };
 
@@ -79,12 +81,12 @@ export const ComplaintsPage: React.FC = () => {
         body: { status: newStatus, resolutionNotes }
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Status Updated');
         setUpdatingComplaint(null);
         fetchComplaints();
       }
     } catch (err: any) {
-      alert('Failed to update status: ' + err.message);
+      await showError('Failed to update status: ' + err.message);
     }
   };
 
@@ -96,12 +98,12 @@ export const ComplaintsPage: React.FC = () => {
         body: { rating: starCount, feedback: feedbackText }
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Feedback Submitted');
         setRatingComplaint(null);
         fetchComplaints();
       }
     } catch (err: any) {
-      alert('Rating submission failed: ' + err.message);
+      await showError('Rating submission failed: ' + err.message);
     }
   };
 

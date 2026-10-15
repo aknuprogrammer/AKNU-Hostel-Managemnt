@@ -34,5 +34,12 @@ export async function initializeSchema() {
     }
   }
 
+  // Ensure new columns exist on existing tables regardless of DB engine
+  try {
+    await executeQuery('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT FALSE');
+  } catch (e) {
+    // Ignore if column already exists
+  }
+
   console.log('[SchemaInit] Database schema successfully verified and initialized.');
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { apiRequest } from '../services/api.js';
 import { LeaveApplication } from '../types.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { CalendarCheck, ShieldCheck, Plus, CheckCircle, XCircle, ArrowRight, Clock, UserCheck } from 'lucide-react';
 import {
   Button,
@@ -22,6 +23,7 @@ import {
 
 export const LeavePage: React.FC = () => {
   const { user } = useAuth();
+  const { confirm, showSuccess, showError, showWarning } = useConfirm();
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -67,20 +69,28 @@ export const LeavePage: React.FC = () => {
         body: newLeave
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Leave Applied');
         setShowApplyModal(false);
         fetchLeaves();
       }
     } catch (err: any) {
-      alert('Application failed: ' + err.message);
+      await showError('Application failed: ' + err.message);
     }
   };
 
   const handleUpdateStatus = async (leaveId: string, status: 'approved' | 'rejected') => {
-    let rejectionReason = '';
-    if (status === 'rejected') {
-      rejectionReason = prompt('Please enter rejection reason:') || 'Policy restrictions';
-    }
+    const isApproved = status === 'approved';
+    const confirmed = await confirm({
+      title: isApproved ? 'Approve Outing / Leave' : 'Reject Outing / Leave',
+      message: isApproved
+        ? 'Are you sure you want to approve this student leave request and issue their digital gate pass?'
+        : 'Are you sure you want to decline this leave application? The student will be notified accordingly.',
+      confirmText: isApproved ? 'Approve Leave' : 'Reject Leave',
+      variant: isApproved ? 'success' : 'danger'
+    });
+    if (!confirmed) return;
+
+    const rejectionReason = status === 'rejected' ? 'Policy restrictions / Warden review' : '';
 
     try {
       const res = await apiRequest<{ success: boolean; message: string }>(`/leave/${leaveId}/status`, {
@@ -88,11 +98,11 @@ export const LeavePage: React.FC = () => {
         body: { status, rejectionReason }
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, isApproved ? 'Leave Approved' : 'Leave Declined');
         fetchLeaves();
       }
     } catch (e: any) {
-      alert('Failed: ' + e.message);
+      await showError('Failed: ' + e.message);
     }
   };
 
@@ -104,7 +114,7 @@ export const LeavePage: React.FC = () => {
         setVerifiedPass(res.data);
       }
     } catch (e: any) {
-      alert('Pass verification error: ' + e.message);
+      await showError('Pass verification error: ' + e.message, 'Invalid Gate Pass');
       setVerifiedPass(null);
     }
   };
@@ -122,12 +132,12 @@ export const LeavePage: React.FC = () => {
         }
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, type === 'EXIT' ? 'Gate Exit Logged' : 'Gate Return Logged');
         handleVerifyGatePass();
         fetchLeaves();
       }
     } catch (e: any) {
-      alert('Movement logging error: ' + e.message);
+      await showError('Movement logging error: ' + e.message);
     }
   };
 

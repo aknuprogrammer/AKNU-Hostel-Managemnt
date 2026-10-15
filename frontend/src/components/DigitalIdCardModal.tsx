@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { StudentProfile } from '../types.js';
 import { X, Printer, RefreshCw, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { apiRequest } from '../services/api.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 
 interface DigitalIdCardModalProps {
   student: StudentProfile | null;
@@ -17,6 +18,7 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
   onClose,
   onQrUpdated
 }) => {
+  const { confirm, showError } = useConfirm();
   const [refreshing, setRefreshing] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -47,6 +49,14 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
   if (!isOpen || !student) return null;
 
   const handleRegenerateQr = async () => {
+    const confirmed = await confirm({
+      title: 'Regenerate QR Credential',
+      message: 'Are you sure you want to regenerate this student QR credential? Any previously printed ID cards will no longer be valid.',
+      confirmText: 'Regenerate QR',
+      variant: 'warning'
+    });
+    if (!confirmed) return;
+
     setRefreshing(true);
     setSuccessMsg('');
     try {
@@ -60,7 +70,7 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
         if (onQrUpdated) onQrUpdated();
       }
     } catch (e: any) {
-      alert('Failed to regenerate QR: ' + e.message);
+      await showError('Failed to regenerate QR: ' + e.message);
     } finally {
       setRefreshing(false);
     }

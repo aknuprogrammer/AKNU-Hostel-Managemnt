@@ -107,7 +107,7 @@ export default function App() {
           return;
         }
 
-        const res = await mobileApiRequest<{ success: boolean; message: string }>('/auth/setup-password', {
+        const res = await mobileApiRequest<{ success: boolean; message: string; token?: string; user?: any }>('/auth/setup-password', {
           method: 'POST',
           body: {
             identifier: setupIdentifier.trim(),
@@ -117,13 +117,26 @@ export default function App() {
         });
 
         if (res.success) {
-          Alert.alert('Success', 'Your new password has been set! You can now sign in.');
-          setEmailInput(setupIdentifier.trim());
-          setPasswordInput(setupNewPassword);
+          Alert.alert('Success', 'Your new password has been set! You are now signed in.');
+          const savedEmail = setupIdentifier.trim();
+          const savedPass = setupNewPassword;
           setSetupModalVisible(false);
           setSetupTempPassword('');
           setSetupNewPassword('');
           setSetupConfirmPassword('');
+          if (res.token && res.user) {
+            setMobileToken(res.token);
+            setCurrentUser(res.user);
+            if (res.user.role === 'student') {
+              setCurrentRole('student');
+            } else if (res.user.role === 'security_staff' || res.user.role === 'security') {
+              setCurrentRole('security');
+            } else {
+              setCurrentRole('warden');
+            }
+          } else {
+            handleLogin(savedEmail, savedPass);
+          }
         }
       }
     } catch (e: any) {
@@ -185,12 +198,26 @@ export default function App() {
 
     try {
       setAuthLoading(true);
-      const res = await mobileApiRequest<{ success: boolean; token: string; user: any }>('/auth/login', {
+      const res = await mobileApiRequest<{
+        success: boolean;
+        token?: string;
+        user?: any;
+        requiresPasswordChange?: boolean;
+        identifier?: string;
+        message?: string;
+      }>('/auth/login', {
         method: 'POST',
         body: { email: loginEmail, password: loginPassword }
       });
 
-      if (res.success) {
+      if (res.requiresPasswordChange) {
+        setSetupIdentifier(loginEmail);
+        setSetupTempPassword(loginPassword);
+        setSetupModalVisible(true);
+        return;
+      }
+
+      if (res.success && res.token) {
         setMobileToken(res.token);
         setCurrentUser(res.user);
 
@@ -422,9 +449,7 @@ export default function App() {
               }}
               style={styles.setupLinkBtn}
             >
-              <Text style={styles.setupLinkBtnText}>
-                🔑 First-time user? Change password with temporary password
-              </Text>
+              
             </TouchableOpacity>
 
             {/* Server URL configuration toggle */}

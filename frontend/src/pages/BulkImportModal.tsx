@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { apiRequest } from '../services/api.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { UploadCloud, FileSpreadsheet, Download, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Button, Modal } from '../components/ui/index.js';
 
@@ -11,6 +12,7 @@ interface BulkImportModalProps {
 }
 
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onImportComplete }) => {
+  const { showError } = useConfirm();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState<any | null>(null);
@@ -83,7 +85,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
         onImportComplete();
       }
     } catch (err: any) {
-      alert('Upload failed: ' + err.message);
+      await showError('Upload failed: ' + err.message, 'Import Error');
     } finally {
       setUploading(false);
     }

@@ -55,7 +55,7 @@ export async function getMessMenu(req: AuthRequest, res: Response): Promise<void
       } else if (s.code === 'snacks') {
         items = isGirls
           ? 'Green Tea / Fresh Milk, Osmania Biscuits (Optional Counter)'
-          : 'Evening Tea / Coffee, Salted Biscuits (Optional Counter)';
+          : 'Evening Tea / Coffee, Salted Biscuits';
       } else {
         items = isGirls
           ? 'Phulka Roti, Paneer Butter Masala, Veg Biryani, Rasam, Curd'
@@ -192,6 +192,25 @@ export async function recordFoodWastage(req: AuthRequest, res: Response): Promis
     );
 
     res.json({ success: true, message: 'Food wastage recorded successfully', data: { wastageId } });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function getMealSessions(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    const sessions = await executeQuery('SELECT * FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC');
+    res.json({ success: true, data: sessions.rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function deleteMessMenu(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  try {
+    await executeQuery('DELETE FROM mess_menus WHERE id = $1', [id]);
+    res.json({ success: true, message: 'Menu item deleted successfully' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

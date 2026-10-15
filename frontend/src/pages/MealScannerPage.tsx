@@ -17,6 +17,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { useConfirm } from '../context/ConfirmContext.js';
 import {
   Button,
   Input,
@@ -27,6 +28,7 @@ import {
 
 export const MealScannerPage: React.FC = () => {
   const { user } = useAuth();
+  const { confirm, showSuccess, showError, showWarning } = useConfirm();
   const [activeSession, setActiveSession] = useState<MealSession | null>(null);
   const [allSessions, setAllSessions] = useState<MealSession[]>([]);
   const [hostels, setHostels] = useState<any[]>([]);
@@ -212,7 +214,7 @@ export const MealScannerPage: React.FC = () => {
         () => {}
       );
     } catch (err) {
-      alert('Unable to access camera: ' + err);
+      await showError('Unable to access camera: ' + err, 'Camera Access Error');
       setScanning(false);
     }
   };
@@ -232,7 +234,7 @@ export const MealScannerPage: React.FC = () => {
   // Manual Roll Number Override
   const handleManualOverride = async () => {
     if (!overrideRoll || !overrideReason) {
-      alert('Roll number and justification reason are required');
+      await showWarning('Roll number and justification reason are required', 'Missing Information');
       return;
     }
 
@@ -250,23 +252,31 @@ export const MealScannerPage: React.FC = () => {
 
       if (res.success) {
         playSound('success');
-        alert(res.message);
+        await showSuccess(res.message, 'Manual Override Logged');
         setShowOverrideModal(false);
         setOverrideRoll('');
         fetchRecentScans();
       }
     } catch (e: any) {
-      alert('Manual override rejected: ' + e.message);
       playSound('error');
+      await showError('Manual override rejected: ' + e.message, 'Override Rejected');
     }
   };
 
   // Transaction Reversal
   const handleReverseTransaction = async () => {
     if (!reversalTx || !reversalReason) {
-      alert('Please provide a justification reason for the reversal');
+      await showWarning('Please provide a justification reason for the reversal', 'Justification Required');
       return;
     }
+
+    const confirmed = await confirm({
+      title: 'Reverse Meal Transaction',
+      message: `Are you sure you want to reverse this meal attendance record for roll ${reversalTx.student_roll}? This will adjust dining counts and record audit reversal.`,
+      confirmText: 'Confirm Reversal',
+      variant: 'warning'
+    });
+    if (!confirmed) return;
 
     try {
       const res = await apiRequest<{ success: boolean; message: string }>('/meal-scans/correct-transaction', {
@@ -279,13 +289,13 @@ export const MealScannerPage: React.FC = () => {
       });
 
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Transaction Reversed');
         setReversalTx(null);
         setReversalReason('');
         fetchRecentScans();
       }
     } catch (e: any) {
-      alert('Reversal failed: ' + e.message);
+      await showError('Reversal failed: ' + e.message);
     }
   };
 

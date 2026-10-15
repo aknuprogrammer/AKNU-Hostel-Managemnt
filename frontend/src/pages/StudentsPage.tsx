@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { apiRequest } from '../services/api.js';
 import { StudentProfile, Hostel } from '../types.js';
 import { useAuth } from '../context/AuthContext.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { DigitalIdCardModal } from '../components/DigitalIdCardModal.js';
 import { BulkImportModal } from './BulkImportModal.js';
 import {
@@ -59,6 +60,7 @@ interface AcademicCourse {
 
 export const StudentsPage: React.FC = () => {
   const { user } = useAuth();
+  const { confirm, showSuccess, showError, showWarning } = useConfirm();
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [departments, setDepartments] = useState<AcademicDept[]>([
@@ -100,6 +102,12 @@ export const StudentsPage: React.FC = () => {
   const [pageSize, setPageSize] = useState<number | 'all'>(10);
   const [totalRecords, setTotalRecords] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [stats, setStats] = useState({
+    total: 0,
+    totalBoys: 0,
+    totalGirls: 0,
+    totalMessActive: 0
+  });
 
   const [selectedStudentForId, setSelectedStudentForId] = useState<StudentProfile | null>(null);
   const [viewingStudent, setViewingStudent] = useState<StudentProfile | null>(null);
@@ -351,6 +359,7 @@ export const StudentsPage: React.FC = () => {
         success: boolean;
         data: StudentProfile[];
         pagination?: { page: number; limit: number; total: number; totalPages: number };
+        stats?: { total: number; totalBoys: number; totalGirls: number; totalMessActive: number };
       }>(`/students?${params.toString()}`);
       if (res.success) {
         setStudents(res.data);
@@ -360,6 +369,16 @@ export const StudentsPage: React.FC = () => {
         } else {
           setTotalRecords(res.data.length);
           setTotalPages(1);
+        }
+        if (res.stats) {
+          setStats(res.stats);
+        } else {
+          setStats({
+            total: res.pagination?.total ?? res.data.length,
+            totalBoys: res.data.filter((s) => s.gender === 'male').length,
+            totalGirls: res.data.filter((s) => s.gender === 'female').length,
+            totalMessActive: res.data.filter((s) => s.mess_eligibility).length
+          });
         }
       }
     } catch (e) {
@@ -372,7 +391,7 @@ export const StudentsPage: React.FC = () => {
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudent.hostelId) {
-      alert('Please select a hostel. If no hostels exist, create a hostel first under the Hostels module.');
+      await showWarning('Please select a hostel. If no hostels exist, create a hostel first under the Hostels module.', 'Hostel Required');
       return;
     }
     try {
@@ -381,7 +400,7 @@ export const StudentsPage: React.FC = () => {
         body: newStudent
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Student Enrolled');
         setShowCreateModal(false);
         const matchHostel = hostels.find((h) => defaultGender === 'female' ? h.category === 'girls' : h.category === 'boys')?.id || (hostels[0]?.id || '');
         setNewStudent({
@@ -403,22 +422,29 @@ export const StudentsPage: React.FC = () => {
         fetchStudents();
       }
     } catch (err: any) {
-      alert('Error creating student: ' + err.message);
+      await showError('Error creating student: ' + err.message);
     }
   };
 
   const handleRegenerateQr = async (studentId: string) => {
-    if (!confirm('Are you sure you want to regenerate this student QR credential? Any previously printed or saved QR will be revoked immediately.')) return;
+    const confirmed = await confirm({
+      title: 'Regenerate QR Credential',
+      message: 'Are you sure you want to regenerate this student QR credential? Any previously printed or saved QR will be revoked immediately.',
+      confirmText: 'Regenerate QR',
+      variant: 'warning'
+    });
+    if (!confirmed) return;
+
     try {
       const res = await apiRequest<{ success: boolean; message: string }>(`/students/${studentId}/regenerate-qr`, {
         method: 'POST'
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'QR Regenerated');
         fetchStudents();
       }
     } catch (e: any) {
-      alert('Failed: ' + e.message);
+      await showError('Failed: ' + e.message);
     }
   };
 
@@ -452,30 +478,37 @@ export const StudentsPage: React.FC = () => {
         body: editForm
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Profile Updated');
         setShowEditModal(false);
         setEditingStudent(null);
         fetchStudents();
       }
     } catch (err: any) {
-      alert('Failed to update student: ' + err.message);
+      await showError('Failed to update student: ' + err.message);
     } finally {
       setIsUpdating(false);
     }
   };
 
   const handleDeleteStudent = async (studentId: string, studentName: string, rollNumber: string) => {
-    if (!confirm(`Are you sure you want to delete student "${studentName}" (${rollNumber})?\n\nThis will permanently remove their records, vacate any assigned beds, and deactivate their access.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete Student Record',
+      message: `Are you sure you want to delete student "${studentName}" (${rollNumber})?\n\nThis will permanently remove their records, vacate any assigned beds, and deactivate their access.`,
+      confirmText: 'Delete Student',
+      variant: 'danger'
+    });
+    if (!confirmed) return;
+
     try {
       const res = await apiRequest<{ success: boolean; message: string }>(`/students/${studentId}`, {
         method: 'DELETE'
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Student Deleted');
         fetchStudents();
       }
     } catch (err: any) {
-      alert('Failed to delete student: ' + err.message);
+      await showError('Failed to delete student: ' + err.message);
     }
   };
 
@@ -521,14 +554,14 @@ export const StudentsPage: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
           <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Total Residents</span>
-          <span className="text-2xl font-black text-[#23395D] mt-1 block">{students.length}</span>
+          <span className="text-2xl font-black text-[#23395D] mt-1 block">{stats.total}</span>
           <span className="text-[10px] text-emerald-700 font-semibold mt-1 block">Active on Campus</span>
         </div>
 
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
           <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Boys Hostels</span>
           <span className="text-2xl font-black text-[#23395D] mt-1 block">
-            {students.filter((s) => s.gender === 'male').length}
+            {stats.totalBoys}
           </span>
           <span
             className="text-[10px] text-blue-700 font-semibold mt-1 block truncate"
@@ -541,7 +574,7 @@ export const StudentsPage: React.FC = () => {
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
           <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Girls Hostels</span>
           <span className="text-2xl font-black text-[#23395D] mt-1 block">
-            {students.filter((s) => s.gender === 'female').length}
+            {stats.totalGirls}
           </span>
           <span
             className="text-[10px] text-rose-700 font-semibold mt-1 block truncate"
@@ -554,7 +587,7 @@ export const StudentsPage: React.FC = () => {
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
           <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Mess Active</span>
           <span className="text-2xl font-black text-[#92582F] mt-1 block">
-            {students.filter((s) => s.mess_eligibility).length}
+            {stats.totalMessActive}
           </span>
           <span className="text-[10px] text-[#92582F] font-semibold mt-1 block">QR Verified Diners</span>
         </div>

@@ -2,10 +2,19 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types.js';
 import { apiRequest, setStoredToken, clearStoredToken, getStoredToken } from '../services/api.js';
 
+export interface LoginResult {
+  success: boolean;
+  token?: string;
+  user?: User;
+  requiresPasswordChange?: boolean;
+  identifier?: string;
+  message?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password?: string) => Promise<void>;
+  login: (email: string, password?: string) => Promise<LoginResult | undefined>;
   quickSwitchRole: (role: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -118,14 +127,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (email: string, password = 'Aknu@2026!') => {
     setLoading(true);
     try {
-      const res = await apiRequest<{ success: boolean; token: string; user: User }>('/auth/login', {
+      const res = await apiRequest<LoginResult>('/auth/login', {
         method: 'POST',
         body: { email, password }
       });
-      if (res.success && res.token) {
+      if (res.requiresPasswordChange) {
+        return res;
+      }
+      if (res.success && res.token && res.user) {
         setStoredToken(res.token);
         setUser(res.user);
       }
+      return res;
     } finally {
       setLoading(false);
     }

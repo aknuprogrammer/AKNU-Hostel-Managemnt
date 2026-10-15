@@ -63,14 +63,21 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
     const whereSql = whereClauses.join(' AND ');
 
     const countRes = await executeQuery(
-      `SELECT COUNT(DISTINCT s.id) as total
+      `SELECT 
+         COUNT(DISTINCT s.id) as total,
+         COUNT(DISTINCT CASE WHEN s.gender = 'male' THEN s.id END) as total_boys,
+         COUNT(DISTINCT CASE WHEN s.gender = 'female' THEN s.id END) as total_girls,
+         COUNT(DISTINCT CASE WHEN s.mess_eligibility = true THEN s.id END) as total_mess_active
        FROM students s
        LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
        WHERE ${whereSql}`,
       params
     );
 
-    const total = parseInt(countRes.rows[0].total);
+    const total = parseInt(countRes.rows[0]?.total || '0');
+    const totalBoys = parseInt(countRes.rows[0]?.total_boys || '0');
+    const totalGirls = parseInt(countRes.rows[0]?.total_girls || '0');
+    const totalMessActive = parseInt(countRes.rows[0]?.total_mess_active || '0');
 
     const querySql = `
       SELECT s.*,
@@ -100,6 +107,12 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
         limit: isAll ? total : parsedLimit,
         total,
         totalPages: isAll ? 1 : (Math.ceil(total / parsedLimit) || 1)
+      },
+      stats: {
+        total,
+        totalBoys,
+        totalGirls,
+        totalMessActive
       }
     });
   } catch (err: any) {
@@ -439,8 +452,8 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
     await executeTransaction(async (query) => {
       // 1. Create linked student user account
       await query(
-        `INSERT INTO users (id, email, password_hash, full_name, phone, role, is_active)
-         VALUES ($1, $2, $3, $4, $5, 'student', true)`,
+        `INSERT INTO users (id, email, password_hash, full_name, phone, role, is_active, is_first_login)
+         VALUES ($1, $2, $3, $4, $5, 'student', true, true)`,
         [userId, email.trim(), defaultPasswordHash, fullName.trim(), phone.trim()]
       );
 
@@ -712,8 +725,8 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
           const qrToken = signStudentQrToken(studentId, item.regNumber, salt);
 
           await query(
-            `INSERT INTO users (id, email, password_hash, full_name, phone, role, is_active)
-             VALUES ($1, $2, $3, $4, $5, 'student', true)`,
+            `INSERT INTO users (id, email, password_hash, full_name, phone, role, is_active, is_first_login)
+             VALUES ($1, $2, $3, $4, $5, 'student', true, true)`,
             [userId, item.email, defaultPasswordHash, item.fullName, item.phone]
           );
 

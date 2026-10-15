@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { apiRequest } from '../services/api.js';
 import { Visitor } from '../types.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { ShieldAlert, Plus, LogOut, CheckCircle2, UserCheck, Shield } from 'lucide-react';
 import {
   Button,
@@ -19,6 +20,7 @@ import {
 } from '../components/ui/index.js';
 
 export const SecurityPage: React.FC = () => {
+  const { confirm, showSuccess, showError, showWarning } = useConfirm();
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -73,7 +75,7 @@ export const SecurityPage: React.FC = () => {
   const handleRegisterVisitor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newVisitor.studentRoll.trim()) {
-      alert('Please enter student roll number');
+      await showWarning('Please enter student roll number', 'Roll Number Required');
       return;
     }
     try {
@@ -82,7 +84,7 @@ export const SecurityPage: React.FC = () => {
         body: newVisitor
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Visitor Registered');
         setShowRegisterModal(false);
         setNewVisitor({
           hostelId: hostels[0]?.id || '',
@@ -97,20 +99,29 @@ export const SecurityPage: React.FC = () => {
         fetchVisitors();
       }
     } catch (err: any) {
-      alert('Error registering visitor: ' + err.message);
+      await showError('Error registering visitor: ' + err.message);
     }
   };
 
   const handleCheckout = async (visitorId: string) => {
+    const confirmed = await confirm({
+      title: 'Checkout Visitor',
+      message: 'Record checkout time and conclude this visitor access pass?',
+      confirmText: 'Record Checkout',
+      variant: 'info'
+    });
+    if (!confirmed) return;
+
     try {
       const res = await apiRequest<{ success: boolean; message: string }>(`/visitors/${visitorId}/checkout`, {
         method: 'PATCH'
       });
       if (res.success) {
+        await showSuccess('Visitor checkout logged successfully.', 'Checked Out');
         fetchVisitors();
       }
     } catch (err: any) {
-      alert('Failed: ' + err.message);
+      await showError('Failed: ' + err.message);
     }
   };
 

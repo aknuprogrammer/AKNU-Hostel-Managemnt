@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useId } from 'react';
 import { Search, Plus, Check, ChevronDown, Loader2, X } from 'lucide-react';
+import { useConfirm } from '../../context/ConfirmContext.js';
 
 export interface SearchableOption {
   value: string;
@@ -43,6 +44,7 @@ export const SearchableCreatableSelect: React.FC<SearchableCreatableSelectProps>
   containerClassName = '',
   id
 }) => {
+  const { showError } = useConfirm();
   const generatedId = useId();
   const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : generatedId);
 
@@ -113,7 +115,7 @@ export const SearchableCreatableSelect: React.FC<SearchableCreatableSelectProps>
       setSearchQuery('');
     } catch (err: any) {
       console.error('Failed to create dynamic option:', err);
-      alert(err.message || 'Failed to add option');
+      await showError(err.message || 'Failed to add option', 'Option Error');
     } finally {
       setIsCreating(false);
     }

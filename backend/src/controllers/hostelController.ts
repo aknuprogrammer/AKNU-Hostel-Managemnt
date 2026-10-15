@@ -731,3 +731,183 @@ export async function batchVacateStudents(req: AuthRequest, res: Response): Prom
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
+export async function deleteBed(req: AuthRequest, res: Response): Promise<void> {
+  const { bedId } = req.params;
+
+  try {
+    const bedRes = await executeQuery(
+      `SELECT b.id, b.room_id, b.bed_number, b.status, r.hostel_id, r.room_number, h.name as hostel_name
+       FROM beds b
+       JOIN rooms r ON b.room_id = r.id
+       JOIN hostels h ON r.hostel_id = h.id
+       WHERE b.id = $1`,
+      [bedId]
+    );
+
+    if (bedRes.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Bed not found' });
+      return;
+    }
+
+    const bed = bedRes.rows[0];
+
+    // RBAC check: restrict wardens to their assigned hostels
+    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
+      if (!req.user.assignedHostels.includes(bed.hostel_id)) {
+        res.status(403).json({ success: false, error: 'Cannot delete beds outside your assigned hostel wing' });
+        return;
+      }
+    }
+
+    // Check if bed is currently occupied by an active allocation
+    const allocRes = await executeQuery(
+      `SELECT sa.id, s.full_name, s.roll_number 
+       FROM student_allocations sa
+       JOIN students s ON sa.student_id = s.id
+       WHERE sa.bed_id = $1 AND sa.status = 'active'`,
+      [bedId]
+    );
+
+    if (allocRes.rows.length > 0 || bed.status === 'occupied') {
+      const studentName = allocRes.rows[0]?.full_name || 'a resident';
+      res.status(400).json({
+        success: false,
+        error: `Cannot delete ${bed.bed_number} because it is currently occupied by ${studentName}. Please vacate the resident before deleting the bed.`
+      });
+      return;
+    }
+
+    await executeTransaction(async (query) => {
+      // 1. Delete the bed
+      await query('DELETE FROM beds WHERE id = $1', [bedId]);
+
+      // 2. Update room capacity and occupancy
+      await query(
+        `UPDATE rooms 
+         SET capacity = (SELECT COUNT(*) FROM beds WHERE room_id = $1),
+             current_occupancy = (SELECT COUNT(*) FROM beds WHERE room_id = $1 AND status = 'occupied')
+         WHERE id = $1`,
+        [bed.room_id]
+      );
+
+      // 3. Update hostel total capacity
+      await query(
+        `UPDATE hostels 
+         SET total_capacity = (
+           SELECT COUNT(b.id) 
+           FROM beds b 
+           JOIN rooms r ON b.room_id = r.id 
+           WHERE r.hostel_id = $1
+         )
+         WHERE id = $1`,
+        [bed.hostel_id]
+      );
+    });
+
+    await logAudit(
+      req.user?.id || 'system',
+      'DELETE_BED',
+      'bed',
+      bedId,
+      { hostelId: bed.hostel_id, roomId: bed.room_id, bedNumber: bed.bed_number },
+      req
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${bed.bed_number} from Room ${bed.room_number}.`
+    });
+  } catch (err: any) {
+    console.error('Error deleting bed:', err);
+    res.status(500).json({ success: false, error: err.message || 'Failed to delete bed' });
+  }
+}
+
+export async function addBedToRoom(req: AuthRequest, res: Response): Promise<void> {
+  const { roomId } = req.params;
+  const { bedNumber } = req.body;
+
+  try {
+    const roomRes = await executeQuery(
+      `SELECT r.id, r.room_number, r.hostel_id, h.name as hostel_name
+       FROM rooms r
+       JOIN hostels h ON r.hostel_id = h.id
+       WHERE r.id = $1`,
+      [roomId]
+    );
+
+    if (roomRes.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Room not found' });
+      return;
+    }
+
+    const room = roomRes.rows[0];
+
+    // RBAC check
+    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
+      if (!req.user.assignedHostels.includes(room.hostel_id)) {
+        res.status(403).json({ success: false, error: 'Cannot add beds to a hostel outside your assigned wing' });
+        return;
+      }
+    }
+
+    const existingBedsRes = await executeQuery('SELECT bed_number FROM beds WHERE room_id = $1', [roomId]);
+    const existingNames = new Set(existingBedsRes.rows.map((b: any) => b.bed_number.toLowerCase().trim()));
+
+    let finalBedNumber = (bedNumber && bedNumber.trim()) || '';
+    if (finalBedNumber && existingNames.has(finalBedNumber.toLowerCase())) {
+      res.status(400).json({
+        success: false,
+        error: `A bed named "${finalBedNumber}" already exists in Room ${room.room_number}. Please choose a different label.`
+      });
+      return;
+    }
+
+    if (!finalBedNumber) {
+      // Find the first unused sequence number (Bed 1, Bed 2, Bed 3, ...)
+      let i = 1;
+      while (existingNames.has(`bed ${i}`)) {
+        i++;
+      }
+      finalBedNumber = `Bed ${i}`;
+    }
+
+    const bedId = `bed-${roomId}-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+
+    await executeTransaction(async (query) => {
+      await query(
+        `INSERT INTO beds (id, room_id, bed_number, status) VALUES ($1, $2, $3, 'vacant')`,
+        [bedId, roomId, finalBedNumber]
+      );
+
+      await query(
+        `UPDATE rooms SET capacity = (SELECT COUNT(*) FROM beds WHERE room_id = $1) WHERE id = $1`,
+        [roomId]
+      );
+
+      await query(
+        `UPDATE hostels SET total_capacity = (SELECT COUNT(b.id) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = $1) WHERE id = $1`,
+        [room.hostel_id]
+      );
+    });
+
+    await logAudit(
+      req.user?.id || 'system',
+      'ADD_BED',
+      'bed',
+      bedId,
+      { hostelId: room.hostel_id, roomId, bedNumber: finalBedNumber },
+      req
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully added ${finalBedNumber} to Room ${room.room_number}.`,
+      data: { id: bedId, roomId, bedNumber: finalBedNumber, status: 'vacant' }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to add bed' });
+  }
+}
+

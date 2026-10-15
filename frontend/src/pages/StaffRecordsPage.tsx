@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api.js';
 import { useAuth } from '../context/AuthContext.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import {
   Users,
   UserPlus,
@@ -58,6 +59,7 @@ interface HostelOption {
 
 export const StaffRecordsPage: React.FC = () => {
   const { user } = useAuth();
+  const { confirm, showSuccess, showError } = useConfirm();
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [hostels, setHostels] = useState<HostelOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,12 +151,19 @@ export const StaffRecordsPage: React.FC = () => {
   };
 
   const handleDeleteStaff = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to remove ${name} from staff records?`)) return;
+    const confirmed = await confirm({
+      title: 'Remove Staff Record',
+      message: `Are you sure you want to remove ${name} from staff records? Their administrative credentials and privileges will be terminated.`,
+      confirmText: 'Remove Staff',
+      variant: 'danger'
+    });
+    if (!confirmed) return;
     try {
       await apiRequest(`/staff/${id}`, { method: 'DELETE' });
-      setSuccessMsg(`Staff record for ${name} removed.`);
+      await showSuccess(`Staff record for ${name} removed.`, 'Staff Removed');
+      fetchStaff();
     } catch (err: any) {
-      setError(err.message || 'Failed to delete staff record');
+      await showError(err.message || 'Failed to delete staff record');
     }
   };
 

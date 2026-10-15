@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import { apiRequest } from '../services/api.js';
 import { FeeLedger } from '../types.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { ReceiptIndianRupee, CreditCard, CheckCircle2, AlertCircle, Printer, Plus } from 'lucide-react';
 import {
   Button,
@@ -21,6 +22,7 @@ import {
 
 export const AccountsPage: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useConfirm();
   const [ledgers, setLedgers] = useState<FeeLedger[]>([]);
   const [structures, setStructures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +94,7 @@ export const AccountsPage: React.FC = () => {
         fetchLedgers();
       }
     } catch (err: any) {
-      alert('Payment recording failed: ' + err.message);
+      await showError('Payment recording failed: ' + err.message, 'Payment Error');
     }
   };
 

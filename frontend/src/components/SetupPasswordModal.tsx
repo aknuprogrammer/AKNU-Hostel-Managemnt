@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
-import { apiRequest } from '../services/api.js';
+import { apiRequest, setStoredToken } from '../services/api.js';
 
 interface SetupPasswordModalProps {
   isOpen: boolean;
@@ -68,7 +68,7 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
 
     setLoading(true);
     try {
-      const res = await apiRequest<{ success: boolean; message: string }>('/auth/setup-password', {
+      const res = await apiRequest<{ success: boolean; message: string; token?: string; user?: any }>('/auth/setup-password', {
         method: 'POST',
         body: {
           identifier: identifier.trim(),
@@ -78,6 +78,9 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
       });
 
       if (res.success) {
+        if (res.token) {
+          setStoredToken(res.token);
+        }
         setSuccessMsg(res.message || 'Password set up successfully!');
         setTimeout(() => {
           onSuccess(identifier.trim(), newPassword);

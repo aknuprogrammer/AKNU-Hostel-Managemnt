@@ -5,7 +5,7 @@ async function updateMealSessions() {
     const sessions = [
       { id: 'ms-breakfast', name: 'Morning Breakfast', code: 'breakfast', startTime: '07:00', endTime: '10:00', grace: 0, is_active: true },
       { id: 'ms-lunch', name: 'Afternoon Lunch', code: 'lunch', startTime: '12:00', endTime: '15:00', grace: 0, is_active: true },
-      { id: 'ms-snacks', name: 'Evening Snacks (Optional)', code: 'snacks', startTime: '16:30', endTime: '18:00', grace: 0, is_active: true },
+      { id: 'ms-snacks', name: 'Evening Snacks', code: 'snacks', startTime: '16:30', endTime: '18:00', grace: 0, is_active: true },
       { id: 'ms-dinner', name: 'Night Dinner', code: 'dinner', startTime: '19:00', endTime: '22:30', grace: 0, is_active: true }
     ];
 

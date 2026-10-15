@@ -98,56 +98,95 @@ export async function processMealScan(req: AuthRequest, res: Response): Promise<
       return;
     }
 
-    // 2. Cryptographic QR Verification
+    // 2. Resolve Student via Cryptographic QR or Fallback (Direct Token / Roll Number / Reg Number)
+    let student: any = null;
+    let verificationMethod = 'QR_SCAN';
+
     const verification = verifyStudentQrToken(qrToken);
-    if (!verification.valid || !verification.payload) {
-      await recordScanAttempt(null, null, session.id, hostelId || null, checkpointName, scannedByUserId, 'INVALID_CREDENTIAL', verification.error || 'Cryptographic signature mismatch');
+    if (verification.valid && verification.payload) {
+      const { studentId, salt } = verification.payload;
+      const studentRes = await executeQuery(
+        `SELECT s.*,
+                sa.hostel_id as allocated_hostel_id, h.name as allocated_hostel_name,
+                r.room_number, b.bed_number
+         FROM students s
+         LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+         LEFT JOIN hostels h ON sa.hostel_id = h.id
+         LEFT JOIN rooms r ON sa.room_id = r.id
+         LEFT JOIN beds b ON sa.bed_id = b.id
+         WHERE s.id = $1`,
+        [studentId]
+      );
+
+      if (studentRes.rowCount > 0) {
+        const candidate = studentRes.rows[0];
+        if (candidate.qr_salt === salt && candidate.qr_status === 'active') {
+          student = candidate;
+        } else if (candidate.qr_status !== 'active') {
+          await recordScanAttempt(candidate.id, candidate.roll_number, session.id, hostelId || null, checkpointName, scannedByUserId, 'INVALID_CREDENTIAL', 'QR token revoked or replaced');
+          res.status(403).json({
+            success: false,
+            resultStatus: 'INVALID_CREDENTIAL',
+            title: 'Revoked Credential',
+            message: 'This digital ID has been revoked or replaced with a newer version. Please instruct the student to generate or refresh their QR ID.'
+          });
+          return;
+        }
+      }
+    }
+
+    // Fallback: If not matched via HMAC QR, search by exact token in DB or roll_number / reg_number / student_id_code
+    if (!student) {
+      const cleanToken = qrToken.trim();
+      // Extract possible embedded roll number from legacy sample token format like "aknu_qr_token_22cse099_sample"
+      let extractedRoll = cleanToken;
+      const legacyMatch = cleanToken.match(/aknu_qr_token_([a-zA-Z0-9]+)/i);
+      if (legacyMatch) {
+        extractedRoll = legacyMatch[1];
+      }
+
+      const directRes = await executeQuery(
+        `SELECT s.*,
+                sa.hostel_id as allocated_hostel_id, h.name as allocated_hostel_name,
+                r.room_number, b.bed_number
+         FROM students s
+         LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+         LEFT JOIN hostels h ON sa.hostel_id = h.id
+         LEFT JOIN rooms r ON sa.room_id = r.id
+         LEFT JOIN beds b ON sa.bed_id = b.id
+         WHERE s.qr_credential_token = $1
+            OR UPPER(s.roll_number) = UPPER($1)
+            OR UPPER(s.roll_number) = UPPER($2)
+            OR UPPER(s.reg_number) = UPPER($1)
+            OR UPPER(s.student_id_code) = UPPER($1)
+            OR s.id = $1`,
+        [cleanToken, extractedRoll]
+      );
+
+      if (directRes.rowCount > 0) {
+        const candidate = directRes.rows[0];
+        if (candidate.qr_status !== 'active') {
+          await recordScanAttempt(candidate.id, candidate.roll_number, session.id, hostelId || null, checkpointName, scannedByUserId, 'INVALID_CREDENTIAL', 'Student QR credentials inactive');
+          res.status(403).json({
+            success: false,
+            resultStatus: 'INVALID_CREDENTIAL',
+            title: 'Revoked Credential',
+            message: 'This digital ID has been revoked or replaced with a newer version.'
+          });
+          return;
+        }
+        student = candidate;
+        verificationMethod = cleanToken.startsWith('aknu_v1.') ? 'QR_SCAN' : 'MANUAL_OVERRIDE';
+      }
+    }
+
+    if (!student) {
+      await recordScanAttempt(null, null, session.id, hostelId || null, checkpointName, scannedByUserId, 'INVALID_CREDENTIAL', verification.error || 'Cryptographic signature mismatch or unrecorded credential');
       res.status(400).json({
         success: false,
         resultStatus: 'INVALID_CREDENTIAL',
-        title: 'Invalid QR Credential',
+        title: 'Verification Failed',
         message: 'The scanned QR code is malformed, expired, or has an invalid university signature.'
-      });
-      return;
-    }
-
-    const { studentId, salt } = verification.payload;
-
-    // 3. Lookup Student Record
-    const studentRes = await executeQuery(
-      `SELECT s.*,
-              sa.hostel_id as allocated_hostel_id, h.name as allocated_hostel_name,
-              r.room_number, b.bed_number
-       FROM students s
-       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
-       LEFT JOIN hostels h ON sa.hostel_id = h.id
-       LEFT JOIN rooms r ON sa.room_id = r.id
-       LEFT JOIN beds b ON sa.bed_id = b.id
-       WHERE s.id = $1`,
-      [studentId]
-    );
-
-    if (studentRes.rowCount === 0) {
-      await recordScanAttempt(studentId, null, session.id, hostelId || null, checkpointName, scannedByUserId, 'NOT_ELIGIBLE', 'Student record not found in system');
-      res.status(404).json({
-        success: false,
-        resultStatus: 'NOT_ELIGIBLE',
-        title: 'Student Not Found',
-        message: 'No student matches this credential in the university database.'
-      });
-      return;
-    }
-
-    const student = studentRes.rows[0];
-
-    // 4. Verify Salt & Token Revocation Status
-    if (student.qr_salt !== salt || student.qr_status !== 'active') {
-      await recordScanAttempt(student.id, student.roll_number, session.id, hostelId || null, checkpointName, scannedByUserId, 'INVALID_CREDENTIAL', 'QR token revoked or replaced');
-      res.status(403).json({
-        success: false,
-        resultStatus: 'INVALID_CREDENTIAL',
-        title: 'Revoked Credential',
-        message: 'This digital ID has been revoked or replaced with a newer version. Please instruct the student to generate or refresh their QR ID.'
       });
       return;
     }
@@ -216,9 +255,9 @@ export async function processMealScan(req: AuthRequest, res: Response): Promise<
             id, student_id, meal_session_id, hostel_id, checkpoint_name,
             service_date, scanned_at, scanned_by_user_id, status, verification_method
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, 'SUCCESS', 'QR_SCAN'
+            $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7, 'SUCCESS', $8
           )`,
-          [transactionId, student.id, session.id, targetHostelId, checkpointName, serviceDate, scannedByUserId]
+          [transactionId, student.id, session.id, targetHostelId, checkpointName, serviceDate, scannedByUserId, verificationMethod]
         );
       });
 

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.js';
+import { useConfirm } from '../context/ConfirmContext.js';
 import { apiRequest } from '../services/api.js';
 import { MessMenu, InventoryItem } from '../types.js';
-import { UtensilsCrossed, Package, Trash2, Plus, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { UtensilsCrossed, Package, Trash2, Plus, AlertTriangle, CheckCircle, Clock, Pencil, Sparkles } from 'lucide-react';
 import {
   Button,
   Input,
   Select,
+  Textarea,
   Modal,
   Badge,
   Table,
@@ -19,6 +21,7 @@ import {
 
 export const MessPage: React.FC = () => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useConfirm();
   const isStudent = user?.role === 'student';
   const isGirlsStudent = isStudent && (
     user?.student?.gender?.toLowerCase() === 'female' ||
@@ -33,6 +36,25 @@ export const MessPage: React.FC = () => {
   const [menus, setMenus] = useState<MessMenu[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Meal sessions for menu editing
+  const [mealSessions, setMealSessions] = useState<any[]>([
+    { id: 'ms-breakfast', name: 'Morning Breakfast', code: 'breakfast', start_time: '07:00', end_time: '10:00' },
+    { id: 'ms-lunch', name: 'Afternoon Lunch', code: 'lunch', start_time: '12:00', end_time: '15:00' },
+    { id: 'ms-snacks', name: 'Evening Snacks', code: 'snacks', start_time: '16:30', end_time: '18:00' },
+    { id: 'ms-dinner', name: 'Night Dinner', code: 'dinner', start_time: '19:00', end_time: '22:30' }
+  ]);
+
+  // Menu Add / Edit Modal state
+  const [showMenuModal, setShowMenuModal] = useState(false);
+  const [menuForm, setMenuForm] = useState({
+    hostelId: '',
+    dayOfWeek: 'Monday',
+    mealSessionId: 'ms-breakfast',
+    menuItems: '',
+    isSpecial: false
+  });
+  const [savingMenu, setSavingMenu] = useState(false);
 
   // Wastage Log state
   const [wastageData, setWastageData] = useState({
@@ -54,7 +76,19 @@ export const MessPage: React.FC = () => {
 
   useEffect(() => {
     fetchHostels();
+    fetchMealSessions();
   }, []);
+
+  const fetchMealSessions = async () => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: any[] }>('/mess/sessions');
+      if (res.success && res.data.length > 0) {
+        setMealSessions(res.data);
+      }
+    } catch (e) {
+      // Fallback already initialized in state
+    }
+  };
 
   const fetchHostels = async () => {
     try {
@@ -147,10 +181,10 @@ export const MessPage: React.FC = () => {
         }
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Wastage Logged');
       }
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      await showError('Error: ' + err.message);
     }
   };
 
@@ -162,16 +196,73 @@ export const MessPage: React.FC = () => {
         body: stockTx
       });
       if (res.success) {
-        alert(res.message);
+        await showSuccess(res.message, 'Inventory Stock Updated');
         setShowStockModal(false);
         fetchInventory();
       }
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      await showError('Error: ' + err.message);
+    }
+  const handleOpenAddMenu = (existingMenu?: MessMenu) => {
+    if (existingMenu) {
+      setMenuForm({
+        hostelId: selectedHostel,
+        dayOfWeek: selectedDay,
+        mealSessionId: existingMenu.meal_session_id,
+        menuItems: existingMenu.menu_items || '',
+        isSpecial: existingMenu.is_special || false
+      });
+    } else {
+      setMenuForm({
+        hostelId: selectedHostel,
+        dayOfWeek: selectedDay,
+        mealSessionId: mealSessions[0]?.id || 'ms-breakfast',
+        menuItems: '',
+        isSpecial: false
+      });
+    }
+    setShowMenuModal(true);
+  };
+
+  const handleSaveMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!menuForm.menuItems.trim()) {
+      await showError('Please enter menu items');
+      return;
+    }
+    const targetHostel = menuForm.hostelId || selectedHostel;
+    if (!targetHostel) {
+      await showError('Please select a hostel');
+      return;
+    }
+
+    setSavingMenu(true);
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>('/mess/menu', {
+        method: 'POST',
+        body: {
+          hostelId: targetHostel,
+          dayOfWeek: menuForm.dayOfWeek,
+          mealSessionId: menuForm.mealSessionId,
+          menuItems: menuForm.menuItems.trim(),
+          isSpecial: menuForm.isSpecial
+        }
+      });
+
+      if (res.success) {
+        await showSuccess(res.message || 'Menu updated successfully', 'Menu Saved');
+        setShowMenuModal(false);
+        fetchMenus();
+      }
+    } catch (err: any) {
+      await showError('Failed to save menu: ' + err.message);
+    } finally {
+      setSavingMenu(false);
     }
   };
 
-  const isMessManager = ['super_admin', 'mess_manager'].includes(user?.role || '');
+  const isMessAdmin = ['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager'].includes(user?.role || '');
+  const isMessManager = isMessAdmin;
   const currentHostelObj = hostels.find((h) => h.id === selectedHostel);
 
   return (
@@ -250,18 +341,32 @@ export const MessPage: React.FC = () => {
       {/* TAB 1: DINING MENUS */}
       {activeSubTab === 'menu' && (
         <div className="space-y-3">
-          {/* Day Selector */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1">
-            {daysOfWeek.map((day) => (
+          {/* Day Selector & Action Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1">
+              {daysOfWeek.map((day) => (
+                <Button
+                  key={day}
+                  size="sm"
+                  variant={selectedDay === day ? 'primary' : 'secondary'}
+                  onClick={() => setSelectedDay(day)}
+                >
+                  {day}
+                </Button>
+              ))}
+            </div>
+
+            {/* Admin / Warden Add Food Menu Button */}
+            {!isStudent && isMessAdmin && (
               <Button
-                key={day}
                 size="sm"
-                variant={selectedDay === day ? 'primary' : 'secondary'}
-                onClick={() => setSelectedDay(day)}
+                variant="primary"
+                leftIcon={<Plus className="w-3.5 h-3.5" />}
+                onClick={() => handleOpenAddMenu()}
               >
-                {day}
+                Add / Update Food Menu
               </Button>
-            ))}
+            )}
           </div>
 
           {/* Meals Timetable for Selected Day */}
@@ -269,26 +374,46 @@ export const MessPage: React.FC = () => {
             {menus.map((m) => (
               <div
                 key={m.id}
-                className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col justify-between"
+                className={`bg-white rounded-lg p-5 border ${m.is_special ? 'border-amber-300 ring-1 ring-amber-200 bg-amber-50/10' : 'border-slate-200'} shadow-sm flex flex-col justify-between transition hover:shadow-md`}
               >
                 <div>
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <span className="font-bold text-sm text-slate-800">{m.session_name}</span>
+                    <div>
+                      <span className="font-bold text-sm text-slate-800">{m.session_name}</span>
+                      {m.is_special && (
+                        <span className="ml-1.5 text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full uppercase">
+                          Special Feast
+                        </span>
+                      )}
+                    </div>
                     <Badge variant="warning">
                       {m.start_time} - {m.end_time}
                     </Badge>
                   </div>
 
                   <div className="mt-3">
-                    <p className="text-xs text-slate-700 leading-relaxed font-medium bg-slate-50 p-3 rounded-md border border-slate-100 min-h-[90px]">
+                    <p className="text-xs text-slate-700 leading-relaxed font-medium bg-slate-50 p-3 rounded-md border border-slate-100 min-h-[90px] whitespace-pre-line">
                       {m.menu_items}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>Nutritious & Hygienic</span>
-                  <span className="text-emerald-600 font-bold">Standard Diet</span>
+                <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {m.is_special ? '✨ Special Feast' : '🥗 Standard Diet'}
+                  </span>
+
+                  {!isStudent && isMessAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddMenu(m)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded transition"
+                      title="Edit this meal's menu items"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Edit Menu</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -415,6 +540,100 @@ export const MessPage: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* MODAL: ADD / UPDATE FOOD MENU */}
+      <Modal
+        isOpen={showMenuModal}
+        onClose={() => setShowMenuModal(false)}
+        title="Add / Update Food Menu"
+        size="md"
+        icon={<UtensilsCrossed className="w-5 h-5 text-amber-600" />}
+      >
+        <form onSubmit={handleSaveMenu} className="space-y-3.5">
+          <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-md text-xs text-amber-900 leading-relaxed">
+            Update dining food menus dynamically. Changes appear immediately on student portals and mess counter attendance displays.
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Hostel</label>
+              <Select
+                value={menuForm.hostelId || selectedHostel}
+                onChange={(e) => setMenuForm({ ...menuForm, hostelId: e.target.value })}
+                options={hostels.map((h) => ({
+                  value: h.id,
+                  label: `${h.name} (${h.code})`
+                }))}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Day of the Week</label>
+              <Select
+                value={menuForm.dayOfWeek}
+                onChange={(e) => setMenuForm({ ...menuForm, dayOfWeek: e.target.value })}
+                options={daysOfWeek.map((d) => ({ value: d, label: d }))}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Meal Session</label>
+            <Select
+              value={menuForm.mealSessionId}
+              onChange={(e) => setMenuForm({ ...menuForm, mealSessionId: e.target.value })}
+              options={mealSessions.map((s) => ({
+                value: s.id,
+                label: `${s.name} (${s.start_time} - ${s.end_time})`
+              }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">
+              Food Menu Items <span className="text-rose-500">*</span>
+            </label>
+            <Textarea
+              rows={4}
+              value={menuForm.menuItems}
+              onChange={(e) => setMenuForm({ ...menuForm, menuItems: e.target.value })}
+              placeholder="e.g. Masala Dosa, Upma, Coconut Chutney, Sambar, Tea / Coffee"
+              required
+            />
+            <p className="text-[11px] text-slate-500 mt-1">Separate dishes with commas. You can also specify special beverages or side dishes.</p>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="is_special_feast"
+              checked={menuForm.isSpecial}
+              onChange={(e) => setMenuForm({ ...menuForm, isSpecial: e.target.checked })}
+              className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+            />
+            <label htmlFor="is_special_feast" className="text-xs text-slate-700 font-medium cursor-pointer select-none">
+              Mark as Special Feast / Festival Diet (Highlights the card badge)
+            </label>
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowMenuModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={savingMenu}
+            >
+              {savingMenu ? 'Saving...' : 'Save & Publish Menu'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL: STOCK TX */}
       <Modal

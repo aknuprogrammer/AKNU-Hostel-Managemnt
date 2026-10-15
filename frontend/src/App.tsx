@@ -89,7 +89,7 @@ export const App: React.FC = () => {
       const next = !prev;
       try {
         localStorage.setItem('aknu_sidebar_collapsed', String(next));
-      } catch {}
+      } catch { }
       return next;
     });
   };
@@ -107,7 +107,10 @@ export const App: React.FC = () => {
     setLoggingIn(true);
     setLoginError('');
     try {
-      await login(email, password);
+      const res = await login(email, password);
+      if (res?.requiresPasswordChange) {
+        setShowSetupModal(true);
+      }
     } catch (err: any) {
       setLoginError(err.message || 'Login failed');
     } finally {
@@ -256,22 +259,7 @@ export const App: React.FC = () => {
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
-                <div className="text-center pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!email.trim() || !password) {
-                        setLoginError('Please enter your University Email or Roll Number and your Temporary Password in the fields above first, then click Change Password.');
-                        return;
-                      }
-                      setLoginError('');
-                      setShowSetupModal(true);
-                    }}
-                    className="text-xs font-semibold text-[#23395D] hover:text-[#92582F] hover:underline transition"
-                  >
-                    🔑 First-time user? Change password with temporary password
-                  </button>
-                </div>
+
               </form>
             </div>
           </div>
@@ -284,7 +272,7 @@ export const App: React.FC = () => {
             setEmail(ident);
             setPassword(newPass);
             // Optionally auto-login with newly set password
-            login(ident, newPass).catch(() => {});
+            login(ident, newPass).catch(() => { });
           }}
           initialIdentifier={email}
           initialTemporaryPassword={password}

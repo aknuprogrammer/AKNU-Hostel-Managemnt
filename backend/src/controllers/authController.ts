@@ -14,7 +14,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   try {
     const userResult = await executeQuery(
-      `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.is_active, r.display_name as role_display
+      `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.is_active, u.is_first_login, r.display_name as role_display
        FROM users u
        JOIN roles r ON u.role = r.id
        LEFT JOIN students s ON s.user_id = u.id
@@ -36,6 +36,17 @@ export async function login(req: Request, res: Response): Promise<void> {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
       res.status(401).json({ success: false, error: 'Invalid email address or password' });
+      return;
+    }
+
+    // Require first-time login students with temporary password to create their personal password
+    if (user.role === 'student' && user.is_first_login) {
+      res.json({
+        success: true,
+        requiresPasswordChange: true,
+        identifier: user.email,
+        message: 'First-time login detected with temporary credentials. Please set up your private password.'
+      });
       return;
     }
 
@@ -84,7 +95,7 @@ export async function login(req: Request, res: Response): Promise<void> {
         if (studentProfile.hostel_category) {
           assignedCategory = studentProfile.hostel_category;
         }
-        if (!studentProfile.qr_credential_token) {
+        if (!studentProfile.qr_credential_token || !studentProfile.qr_credential_token.startsWith('aknu_v1.')) {
           const salt = generateQrSalt();
           const qrToken = signStudentQrToken(studentProfile.id, studentProfile.reg_number, salt);
           await executeQuery(
@@ -182,7 +193,7 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
         if (studentProfile.hostel_category) {
           assignedCategory = studentProfile.hostel_category;
         }
-        if (!studentProfile.qr_credential_token) {
+        if (!studentProfile.qr_credential_token || !studentProfile.qr_credential_token.startsWith('aknu_v1.')) {
           const salt = generateQrSalt();
           const qrToken = signStudentQrToken(studentProfile.id, studentProfile.reg_number, salt);
           await executeQuery(
@@ -283,15 +294,59 @@ export async function setupPassword(req: Request, res: Response): Promise<void> 
 
     const newHash = await bcrypt.hash(newPassword, 10);
     await executeQuery(
-      'UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      'UPDATE users SET password_hash = $1, is_first_login = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
       [newHash, user.id]
     );
 
     await logAudit(user.id, 'SETUP_PASSWORD', 'user', user.id, { role: user.role }, req);
 
+    // Fetch student profile for direct session authorization
+    let studentProfile = null;
+    let assignedCategory: 'boys' | 'girls' | 'all' = 'all';
+    if (user.role === 'student') {
+      const studentRes = await executeQuery(
+        `SELECT s.*, h.name as hostel_name, h.id as hostel_id, h.code as hostel_code, h.category as hostel_category, r.room_number, b.bed_number
+         FROM students s
+         LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+         LEFT JOIN hostels h ON sa.hostel_id = h.id
+         LEFT JOIN rooms r ON sa.room_id = r.id
+         LEFT JOIN beds b ON sa.bed_id = b.id
+         WHERE s.user_id = $1`,
+        [user.id]
+      );
+      if (studentRes.rowCount > 0) {
+        studentProfile = studentRes.rows[0];
+        if (studentProfile.hostel_category) {
+          assignedCategory = studentProfile.hostel_category;
+        }
+      }
+    }
+
+    const token = generateToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.full_name,
+      assignedHostels: [],
+      assignedCategory,
+      studentId: studentProfile ? studentProfile.id : undefined
+    });
+
     res.json({
       success: true,
-      message: 'New password set up successfully! You can now log in with your new password.'
+      message: 'New password set up successfully! You are now logged in.',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        phone: user.phone,
+        role: user.role,
+        roleDisplay: 'Student Resident',
+        assignedHostels: [],
+        assignedCategory,
+        student: studentProfile
+      }
     });
   } catch (err: any) {
     console.error('[Setup Password Error]', err);

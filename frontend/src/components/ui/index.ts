@@ -7,3 +7,4 @@ export * from './Modal.js';
 export * from './Table.js';
 export * from './Card.js';
 export * from './SearchableCreatableSelect.js';
+export * from './ConfirmDialog.js';
