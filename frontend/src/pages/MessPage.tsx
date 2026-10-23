@@ -203,6 +203,8 @@ export const MessPage: React.FC = () => {
     } catch (err: any) {
       await showError('Error: ' + err.message);
     }
+  };
+
   const handleOpenAddMenu = (existingMenu?: MessMenu) => {
     if (existingMenu) {
       setMenuForm({
@@ -261,7 +263,7 @@ export const MessPage: React.FC = () => {
     }
   };
 
-  const isMessAdmin = ['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager'].includes(user?.role || '');
+  const isMessAdmin = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(user?.role || '');
   const isMessManager = isMessAdmin;
   const currentHostelObj = hostels.find((h) => h.id === selectedHostel);
 

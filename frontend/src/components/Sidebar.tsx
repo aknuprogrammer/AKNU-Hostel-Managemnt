@@ -13,7 +13,8 @@ import {
   CreditCard,
   Contact,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  UserCheck
 } from 'lucide-react';
 
 export type ActiveTab =
@@ -49,20 +50,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Role permissions for sidebar tabs
   const canAccessDashboard = role !== 'student';
-  const canAccessScanner = ['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager'].includes(role);
-  const canAccessStudents = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
-  const canAccessHostels = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
-  const canAccessStaff = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
-  const canAccessMess = ['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager', 'student'].includes(role);
-  const canAccessAccounts = ['super_admin', 'chief_warden', 'hostel_warden', 'student'].includes(role);
-  const canAccessSecurity = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
+  const canAccessScanner = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
+  const canAccessStudents = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
+  const canAccessHostels = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
+  const canAccessStaff = ['super_admin', 'chief_warden'].includes(role);
+  const canAccessMess = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant', 'student'].includes(role);
+  const canAccessAccounts = ['super_admin', 'chief_warden', 'assistant_warden', 'student'].includes(role);
+  const canAccessSecurity = ['super_admin', 'chief_warden', 'assistant_warden'].includes(role);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: canAccessDashboard },
     {
       id: 'meal-scanner',
-      label: 'Meal QR Scanner',
-      icon: QrCode,
+      label: 'Face Attendance Scanner',
+      icon: UserCheck,
       show: canAccessScanner,
       badge: 'Live'
     },

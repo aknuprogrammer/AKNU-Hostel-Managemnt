@@ -12,8 +12,8 @@ const router = Router();
 
 router.post('/apply', authenticate, submitLeaveApplication);
 router.get('/', authenticate, getLeaveApplications);
-router.patch('/:id/status', authenticate, requireRoles('super_admin', 'chief_warden', 'hostel_warden'), updateLeaveStatus);
-router.get('/gate-pass/:passCode', authenticate, requireRoles('super_admin', 'security_staff', 'chief_warden', 'hostel_warden'), verifyGatePass);
-router.post('/gate-movements', authenticate, requireRoles('super_admin', 'security_staff'), logGateMovement);
+router.patch('/:id/status', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden'), updateLeaveStatus);
+router.get('/gate-pass/:passCode', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), verifyGatePass);
+router.post('/gate-movements', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), logGateMovement);
 
 export default router;

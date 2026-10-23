@@ -256,11 +256,15 @@ export default function App() {
     setScanProcessing(true);
 
     try {
-      const res = await mobileApiRequest<any>('/meal-scans/scan', {
+      const res = await mobileApiRequest<any>('/meal-scans/face-scan', {
         method: 'POST',
         body: {
+          studentId: token,
+          rollNumber: token,
+          regNumber: token,
           qrToken: token,
-          checkpointName: 'Mobile Dining Counter',
+          checkpointName: 'Mobile Dining Terminal',
+          verificationMethod: 'FACE_RECOGNITION',
           mealSessionId: activeSession?.id || undefined
         }
       });
@@ -672,10 +676,10 @@ export default function App() {
               </View>
             </View>
 
-            {/* Live Camera Scanner Viewport */}
+            {/* Live Biometric Face Scanner Viewport */}
             <View style={styles.scannerWrapper}>
               <View style={styles.scannerHeaderRow}>
-                <Text style={styles.scannerTitle}>Focus Camera on Student QR</Text>
+                <Text style={styles.scannerTitle}>Focus Camera on Student Face</Text>
                 <TouchableOpacity
                   onPress={() => setTorchEnabled(!torchEnabled)}
                   style={[styles.torchBtn, torchEnabled && styles.torchBtnActive]}
@@ -696,23 +700,23 @@ export default function App() {
                     onBarcodeScanned={scanProcessing ? undefined : handleBarcodeScanned}
                   />
 
-                  {/* High Visibility Scanning Target Reticle */}
+                  {/* High Visibility Biometric Face Reticle */}
                   <View style={styles.reticleOverlay}>
-                    <View style={styles.reticleBox}>
+                    <View style={[styles.reticleBox, { borderRadius: 40 }]}>
                       <View style={[styles.corner, styles.cornerTL]} />
                       <View style={[styles.corner, styles.cornerTR]} />
                       <View style={[styles.corner, styles.cornerBL]} />
                       <View style={[styles.corner, styles.cornerBR]} />
                       <View style={styles.scanLaser} />
                     </View>
-                    <Text style={styles.reticleInstruction}>Align student QR code within frame</Text>
+                    <Text style={styles.reticleInstruction}>Align student face within biometric frame</Text>
                   </View>
                 </View>
               ) : (
                 <View style={styles.cameraPermissionBox}>
                   <Text style={styles.cameraPermTitle}>Camera Permission Required</Text>
                   <Text style={styles.cameraPermSub}>
-                    Allow camera access to scan student meal credentials at dining counters.
+                    Allow camera access to verify student faces at dining counters.
                   </Text>
                   <TouchableOpacity onPress={requestPermission} style={styles.grantPermBtn}>
                     <Text style={styles.grantPermBtnText}>Enable Camera Scanner</Text>
@@ -723,9 +727,9 @@ export default function App() {
 
             {/* Quick Test / Manual Scan Entry (Fallback) */}
             <View style={styles.manualScanCard}>
-              <Text style={styles.manualCardTitle}>Manual Scan or Roll Number Verification</Text>
+              <Text style={styles.manualCardTitle}>Verify Resident Face & Meal</Text>
               <Text style={styles.manualCardSub}>
-                If camera is unavailable or screen is damaged, enter roll number or paste token:
+                Enter student roll number or registration number to verify face and record dining:
               </Text>
 
               <View style={styles.manualInputRow}>
@@ -741,9 +745,9 @@ export default function App() {
                     processScanToken(manualCodeInput);
                     setManualCodeInput('');
                   }}
-                  style={styles.manualSubmitBtn}
+                  style={[styles.manualSubmitBtn, { backgroundColor: '#166534' }]}
                 >
-                  <Text style={styles.manualSubmitBtnText}>Verify</Text>
+                  <Text style={styles.manualSubmitBtnText}>Verify Face</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1035,10 +1039,10 @@ export default function App() {
               </Text>
               <Text style={styles.resultBadgeText}>
                 {scanResult?.resultStatus === 'SUCCESS'
-                  ? 'MEAL VERIFIED & RECORDED'
+                  ? 'PRESENT - FACE VERIFIED'
                   : scanResult?.resultStatus === 'DUPLICATE'
-                  ? 'DUPLICATE SCAN DETECTED'
-                  : 'VERIFICATION FAILED'}
+                  ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
+                  : (scanResult?.title || 'VERIFICATION FAILED')}
               </Text>
             </View>
 

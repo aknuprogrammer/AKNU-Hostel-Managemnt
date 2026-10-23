@@ -37,59 +37,41 @@ export const ROLE_PRESETS: Record<string, RolePreset> = {
     desc: 'Dr. K. S. Rao • Campus-wide governance (All Wings)',
     category: 'all'
   },
-  univ_mgmt: {
-    email: 'registrar@aknu.edu.in',
-    label: 'Registrar (Mgmt)',
-    desc: 'Prof. V. Sharma • University Administration & Strategy',
-    category: 'all'
-  },
   chief_warden_boys: {
     email: 'chiefwarden.boys@aknu.edu.in',
     label: 'Chief Warden (Boys)',
-    desc: 'Prof. M. Ramana • Multi-hostel Boys Wing oversight',
+    desc: 'Chief Warden • Boys Wing Admissions & Late Meal Approvals',
     category: 'boys'
   },
   chief_warden_girls: {
     email: 'chiefwarden.girls@aknu.edu.in',
     label: 'Chief Warden (Girls)',
-    desc: 'Prof. K. Vijaya • Multi-hostel Girls Wing oversight',
+    desc: 'Chief Warden • Girls Wing Admissions & Late Meal Approvals',
     category: 'girls'
   },
-  hostel_warden_boys: {
+  assistant_warden_boys: {
     email: 'warden.boys@aknu.edu.in',
-    label: 'Hostel Warden (Boys)',
-    desc: 'Dr. P. Satyanarayana • Boys Wing allocations & passes',
+    label: 'Assistant Warden (Boys)',
+    desc: 'Assistant Warden • Boys Hostel Inspection & Approvals',
     category: 'boys'
   },
-  hostel_warden_girls: {
+  assistant_warden_girls: {
     email: 'warden.girls@aknu.edu.in',
-    label: 'Hostel Warden (Girls)',
-    desc: 'Dr. S. Lakshmi • Girls Wing allocations & passes',
+    label: 'Assistant Warden (Girls)',
+    desc: 'Assistant Warden • Girls Hostel Inspection & Approvals',
     category: 'girls'
   },
-  mess_manager: {
-    email: 'messmanager@aknu.edu.in',
-    label: 'Mess Manager',
-    desc: 'Mr. G. Srinivas • Menus, stocks & food logistics',
-    category: 'all'
+  junior_assistant_boys: {
+    email: 'ja.boys@aknu.edu.in',
+    label: 'Junior Assistant (Boys)',
+    desc: 'Junior Assistant • Boys Room Allocation & Mess Face Scanning',
+    category: 'boys'
   },
-  mess_staff: {
-    email: 'messstaff1@aknu.edu.in',
-    label: 'Mess Staff',
-    desc: 'Mr. B. Krishna • Meal counter checkpoint verification',
-    category: 'all'
-  },
-  accounts_staff: {
-    email: 'accounts@aknu.edu.in',
-    label: 'Accounts Officer',
-    desc: 'Mr. Ch. Venkatesh • Fee ledgers & hostel accounting',
-    category: 'all'
-  },
-  maint_staff: {
-    email: 'maintenance@aknu.edu.in',
-    label: 'Maintenance Sup.',
-    desc: 'Mr. K. Appa Rao • Facility work orders & repairs',
-    category: 'all'
+  junior_assistant_girls: {
+    email: 'ja.girls@aknu.edu.in',
+    label: 'Junior Assistant (Girls)',
+    desc: 'Junior Assistant • Girls Room Allocation & Mess Face Scanning',
+    category: 'girls'
   }
 };
 

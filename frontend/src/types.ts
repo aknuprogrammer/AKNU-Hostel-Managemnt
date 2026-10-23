@@ -1,13 +1,8 @@
 export type UserRole =
   | 'super_admin'
-  | 'univ_mgmt'
   | 'chief_warden'
-  | 'hostel_warden'
-  | 'mess_manager'
-  | 'mess_staff'
-  | 'security_staff'
-  | 'accounts_staff'
-  | 'maint_staff'
+  | 'assistant_warden'
+  | 'junior_assistant'
   | 'student';
 
 export interface User {
@@ -94,6 +89,9 @@ export interface MealScanResult {
     scannedAt: string;
     sessionName: string;
     checkpoint: string;
+    verificationMethod?: string;
+    isLateMeal?: boolean;
+    lateApprovedBy?: string | null;
   };
   student?: {
     id?: string;

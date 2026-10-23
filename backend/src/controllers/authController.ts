@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
 import { executeQuery } from '../config/database.js';
 import { generateToken } from '../config/jwt.js';
 import { logAudit, AuthRequest } from '../middleware/auth.js';
 import { generateQrSalt, signStudentQrToken } from '../utils/qr.js';
+import { sendOtpEmail } from '../services/emailService.js';
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body;
@@ -14,7 +16,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 
   try {
     const userResult = await executeQuery(
-      `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.is_active, u.is_first_login, r.display_name as role_display
+      `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.gender_wing, u.is_active, u.is_first_login, r.display_name as role_display
        FROM users u
        JOIN roles r ON u.role = r.id
        LEFT JOIN students s ON s.user_id = u.id
@@ -39,26 +41,7 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    // Require first-time login students with temporary password to create their personal password
-    if (user.role === 'student' && user.is_first_login) {
-      res.json({
-        success: true,
-        requiresPasswordChange: true,
-        identifier: user.email,
-        message: 'First-time login detected with temporary credentials. Please set up your private password.'
-      });
-      return;
-    }
 
-    // Roles maintained strictly as personnel records without application access
-    const RECORD_ONLY_ROLES = ['univ_mgmt', 'mess_staff', 'security_staff', 'accounts_staff', 'maint_staff'];
-    if (RECORD_ONLY_ROLES.includes(user.role)) {
-      res.status(403).json({
-        success: false,
-        error: 'Access Restricted: This role is maintained in university personnel records only and does not have login access to the application.'
-      });
-      return;
-    }
 
     // Get assigned hostels if staff
     const hostelAssignments = await executeQuery(
@@ -69,8 +52,8 @@ export async function login(req: Request, res: Response): Promise<void> {
       [user.id]
     );
 
-    let assignedCategory: 'boys' | 'girls' | 'all' = 'all';
-    if (user.role !== 'super_admin' && hostelAssignments.rows.length > 0) {
+    let assignedCategory: 'boys' | 'girls' | 'all' = (user.gender_wing as 'boys' | 'girls' | 'all') || 'all';
+    if (user.role !== 'super_admin' && (!user.gender_wing || user.gender_wing === 'all') && hostelAssignments.rows.length > 0) {
       const allBoys = hostelAssignments.rows.every((h: any) => h.category === 'boys');
       const allGirls = hostelAssignments.rows.every((h: any) => h.category === 'girls');
       if (allBoys) assignedCategory = 'boys';
@@ -147,7 +130,7 @@ export async function login(req: Request, res: Response): Promise<void> {
 export async function getCurrentUser(req: AuthRequest, res: Response): Promise<void> {
   try {
     const userResult = await executeQuery(
-      `SELECT u.id, u.email, u.full_name, u.phone, u.role, r.display_name as role_display
+      `SELECT u.id, u.email, u.full_name, u.phone, u.role, u.gender_wing, r.display_name as role_display
        FROM users u
        JOIN roles r ON u.role = r.id
        WHERE u.id = $1`,
@@ -168,8 +151,8 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
       [user.id]
     );
 
-    let assignedCategory: 'boys' | 'girls' | 'all' = 'all';
-    if (user.role !== 'super_admin' && hostelAssignments.rows.length > 0) {
+    let assignedCategory: 'boys' | 'girls' | 'all' = (user.gender_wing as 'boys' | 'girls' | 'all') || 'all';
+    if (user.role !== 'super_admin' && (!user.gender_wing || user.gender_wing === 'all') && hostelAssignments.rows.length > 0) {
       const allBoys = hostelAssignments.rows.every((h: any) => h.category === 'boys');
       const allGirls = hostelAssignments.rows.every((h: any) => h.category === 'girls');
       if (allBoys) assignedCategory = 'boys';
@@ -351,5 +334,141 @@ export async function setupPassword(req: Request, res: Response): Promise<void> 
   } catch (err: any) {
     console.error('[Setup Password Error]', err);
     res.status(500).json({ success: false, error: 'Failed to set up new password: ' + err.message });
+  }
+}
+
+export async function forgotPasswordSendOtp(req: Request, res: Response): Promise<void> {
+  const { identifier } = req.body;
+  if (!identifier || !identifier.trim()) {
+    res.status(400).json({ success: false, error: 'Please enter your registered email address or registration number' });
+    return;
+  }
+  const cleanId = identifier.trim();
+
+  try {
+    // Look up user by email or student reg_number / roll_number
+    const userRes = await executeQuery(`
+      SELECT u.id, u.email, u.full_name, u.role
+      FROM users u
+      LEFT JOIN students s ON s.user_id = u.id
+      WHERE LOWER(u.email) = LOWER($1) OR UPPER(s.reg_number) = UPPER($1) OR UPPER(s.roll_number) = UPPER($1)
+    `, [cleanId]);
+
+    if (userRes.rowCount === 0) {
+      res.status(404).json({
+        success: false,
+        error: 'No account found matching this email address or registration number. Please check your credentials.'
+      });
+      return;
+    }
+
+    const user = userRes.rows[0];
+    const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Invalidate prior unused OTPs for this user
+    await executeQuery(`
+      UPDATE password_reset_otps SET used = true WHERE user_id = $1 AND used = false
+    `, [user.id]);
+
+    const otpId = `otp-${uuidv4().slice(0, 8)}`;
+    await executeQuery(`
+      INSERT INTO password_reset_otps (id, user_id, email, otp, expires_at)
+      VALUES ($1, $2, $3, $4, $5)
+    `, [otpId, user.id, user.email, otp, expiresAt]);
+
+    const emailSent = await sendOtpEmail(user.email, user.full_name, otp);
+    if (!emailSent) {
+      res.status(500).json({
+        success: false,
+        error: 'Unable to send OTP email at this moment. Please check your internet connection or contact the Chief Warden.'
+      });
+      return;
+    }
+
+    // Mask email for security/privacy display (e.g. j***s@aknu.edu.in)
+    const [local, domain] = user.email.split('@');
+    const maskedLocal = local.length > 2
+      ? `${local[0]}***${local[local.length - 1]}`
+      : `${local[0]}***`;
+    const maskedEmail = `${maskedLocal}@${domain}`;
+
+    res.json({
+      success: true,
+      message: `A 6-digit One-Time Password (OTP) has been sent to your registered email (${maskedEmail}).`,
+      maskedEmail,
+      identifier: user.email
+    });
+  } catch (err: any) {
+    console.error('[Forgot Password Send OTP Error]', err);
+    res.status(500).json({ success: false, error: 'Internal server error: ' + err.message });
+  }
+}
+
+export async function forgotPasswordVerifyOtp(req: Request, res: Response): Promise<void> {
+  const { identifier, otp, newPassword } = req.body;
+  if (!identifier || !otp || !newPassword) {
+    res.status(400).json({ success: false, error: 'Identifier, 6-digit OTP, and new password are required' });
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    res.status(400).json({ success: false, error: 'New password must be at least 6 characters long' });
+    return;
+  }
+
+  const cleanId = identifier.trim();
+  const cleanOtp = otp.trim();
+
+  try {
+    // Find user
+    const userRes = await executeQuery(`
+      SELECT u.id, u.email, u.full_name
+      FROM users u
+      LEFT JOIN students s ON s.user_id = u.id
+      WHERE LOWER(u.email) = LOWER($1) OR UPPER(s.reg_number) = UPPER($1) OR UPPER(s.roll_number) = UPPER($1)
+    `, [cleanId]);
+
+    if (userRes.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'User account not found' });
+      return;
+    }
+
+    const user = userRes.rows[0];
+
+    // Check latest valid OTP
+    const otpRes = await executeQuery(`
+      SELECT id, expires_at, used
+      FROM password_reset_otps
+      WHERE user_id = $1 AND otp = $2 AND used = false
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [user.id, cleanOtp]);
+
+    if (otpRes.rowCount === 0) {
+      res.status(400).json({ success: false, error: 'Invalid or already used OTP. Please check the code or request a new one.' });
+      return;
+    }
+
+    const record = otpRes.rows[0];
+    if (new Date() > new Date(record.expires_at)) {
+      res.status(400).json({ success: false, error: 'This OTP has expired. Please request a new OTP.' });
+      return;
+    }
+
+    // Hash and update password
+    const newHash = await bcrypt.hash(newPassword, 10);
+    await executeQuery(`UPDATE users SET password_hash = $1, is_first_login = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [newHash, user.id]);
+    await executeQuery(`UPDATE password_reset_otps SET used = true WHERE id = $1`, [record.id]);
+
+    await logAudit(user.id, 'PASSWORD_RESET_VIA_OTP', 'users', user.id, `Password reset via email OTP for ${user.email}`, req);
+
+    res.json({
+      success: true,
+      message: 'Password reset successful! You can now sign in with your new password.'
+    });
+  } catch (err: any) {
+    console.error('[Forgot Password Verify OTP Error]', err);
+    res.status(500).json({ success: false, error: 'Failed to reset password: ' + err.message });
   }
 }

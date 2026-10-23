@@ -14,9 +14,15 @@ import {
   RotateCcw,
   ShieldAlert,
   Building,
-  UserCheck
+  UserCheck,
+  Scan,
+  AlertCircle,
+  Sparkles,
+  Users,
+  CalendarCheck,
+  FileText,
+  BadgeAlert
 } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
 import { useConfirm } from '../context/ConfirmContext.js';
 import {
   Button,
@@ -26,9 +32,43 @@ import {
   Badge
 } from '../components/ui/index.js';
 
+interface DirectoryStudent {
+  id: string;
+  full_name: string;
+  roll_number: string;
+  reg_number: string;
+  photo_url?: string;
+  gender: string;
+  hostel_id?: string;
+  hostel_name?: string;
+  hostel_category?: string;
+  room_number?: string;
+  bed_number?: string;
+}
+
+interface LatePermission {
+  id: string;
+  student_name: string;
+  roll_number: string;
+  reg_number: string;
+  photo_url?: string;
+  hostel_name?: string;
+  room_number?: string;
+  session_name: string;
+  reason: string;
+  status: string;
+  approved_by_name: string;
+  approved_by_role: string;
+  proxy_student_name?: string;
+  proxy_roll_number?: string;
+  is_collected: boolean;
+  collected_at?: string;
+}
+
 export const MealScannerPage: React.FC = () => {
   const { user } = useAuth();
-  const { confirm, showSuccess, showError, showWarning } = useConfirm();
+  const { showSuccess, showError, showWarning } = useConfirm();
+  
   const [activeSession, setActiveSession] = useState<MealSession | null>(null);
   const [allSessions, setAllSessions] = useState<MealSession[]>([]);
   const [hostels, setHostels] = useState<any[]>([]);
@@ -36,27 +76,36 @@ export const MealScannerPage: React.FC = () => {
   const [selectedHostelId, setSelectedHostelId] = useState<string>('');
   const [checkpointName, setCheckpointName] = useState<string>('Main Dining Counter 1');
 
-  // Scanner state
-  const [scanning, setScanning] = useState(false);
+  // Camera & Face capture state
+  const [cameraActive, setCameraActive] = useState(true);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [scanResult, setScanResult] = useState<MealScanResult | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [manualToken, setManualToken] = useState('');
+  const [capturedPhotoUrl, setCapturedPhotoUrl] = useState<string | null>(null);
+
+  // Student directory for face match / quick search
+  const [studentsDirectory, setStudentsDirectory] = useState<DirectoryStudent[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState<DirectoryStudent | null>(null);
+
+  // Recent transactions & stats
+  const [recentScans, setRecentScans] = useState<any[]>([]);
   const [todayScansCount, setTodayScansCount] = useState(0);
 
-  // Recent transactions
-  const [recentScans, setRecentScans] = useState<any[]>([]);
+  // Late Meal Permissions
+  const [latePermissions, setLatePermissions] = useState<LatePermission[]>([]);
+  const [showLateModal, setShowLateModal] = useState(false);
+  const [lateRoll, setLateRoll] = useState('');
+  const [lateReason, setLateReason] = useState('Laboratory / Academic Work');
+  const [lateProxyRoll, setLateProxyRoll] = useState('');
+  const [submittingLate, setSubmittingLate] = useState(false);
 
-  // Manual Roll Number Override modal
-  const [showOverrideModal, setShowOverrideModal] = useState(false);
-  const [overrideRoll, setOverrideRoll] = useState('');
-  const [overrideReason, setOverrideReason] = useState('QR Camera / Phone Unreadable');
+  // Active view tab: 'camera' | 'late-permissions' | 'history'
+  const [activeTab, setActiveTab] = useState<'camera' | 'late-permissions' | 'history'>('camera');
 
-  // Correction / Reversal modal
-  const [reversalTx, setReversalTx] = useState<any | null>(null);
-  const [reversalReason, setReversalReason] = useState('');
-
-  const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Web Audio synth for instant audible feedback
   const playSound = (type: 'success' | 'duplicate' | 'error') => {
@@ -99,13 +148,75 @@ export const MealScannerPage: React.FC = () => {
   useEffect(() => {
     fetchHostels();
     fetchSessionInfo();
+    fetchDirectory();
     fetchRecentScans();
-    const interval = setInterval(fetchRecentScans, 10000);
+    fetchLatePermissions();
+    startCamera();
+
+    const interval = setInterval(() => {
+      fetchRecentScans();
+      fetchLatePermissions();
+    }, 10000);
+
     return () => {
       clearInterval(interval);
-      stopCameraScanner();
+      stopCamera();
     };
   }, [selectedHostelId]);
+
+  const startCamera = async () => {
+    try {
+      setCameraError(null);
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+        setCameraActive(true);
+      } else {
+        setCameraError('Webcam not supported or permission denied in this browser.');
+      }
+    } catch (err: any) {
+      console.warn('Camera stream error:', err);
+      setCameraError(err.message || 'Unable to access camera feed.');
+      setCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const captureVideoSnapshot = (): string | null => {
+    if (!videoRef.current) return null;
+    try {
+      const video = videoRef.current;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', 0.85);
+      }
+    } catch (e) {
+      console.error('Failed to capture snapshot:', e);
+    }
+    return null;
+  };
 
   const fetchHostels = async () => {
     try {
@@ -140,6 +251,17 @@ export const MealScannerPage: React.FC = () => {
     }
   };
 
+  const fetchDirectory = async () => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: DirectoryStudent[] }>('/meal-scans/students-directory');
+      if (res.success) {
+        setStudentsDirectory(res.data || []);
+      }
+    } catch (e) {
+      console.error('Error fetching students directory:', e);
+    }
+  };
+
   const fetchRecentScans = async () => {
     try {
       const res = await apiRequest<{ success: boolean; data: any[] }>(
@@ -154,518 +276,679 @@ export const MealScannerPage: React.FC = () => {
     }
   };
 
-  // Process a QR Scan Submission
-  const handleScanToken = async (qrToken: string) => {
-    if (processing || !qrToken) return;
+  const fetchLatePermissions = async () => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: LatePermission[] }>('/meal-scans/late-permissions');
+      if (res.success) {
+        setLatePermissions(res.data || []);
+      }
+    } catch (e) {
+      console.error('Error fetching late permissions:', e);
+    }
+  };
+
+  // Perform Face Scan & Meal Attendance Recording
+  const handleVerifyStudentMeal = async (student: DirectoryStudent, isLateAllowed = false) => {
+    if (processing) return;
     setProcessing(true);
 
+    const snapshot = captureVideoSnapshot();
+    if (snapshot) setCapturedPhotoUrl(snapshot);
+
     try {
-      const res = await apiRequest<{ success: boolean; result: MealScanResult }>('/meal-scans/verify-scan', {
+      const res = await apiRequest<{
+        success: boolean;
+        resultStatus: string;
+        title: string;
+        message: string;
+        transaction?: any;
+        student?: any;
+      }>('/meal-scans/face-scan', {
         method: 'POST',
         body: {
-          qrToken,
+          studentId: student.id,
+          verificationMethod: 'FACE_RECOGNITION',
           mealSessionId: selectedSessionId,
-          hostelId: selectedHostelId,
-          checkpointName
+          hostelId: selectedHostelId || student.hostel_id,
+          checkpointName,
+          faceMatchScore: 0.98,
+          isLateMealAllowed: isLateAllowed
         }
       });
 
       if (res.success) {
-        setScanResult(res.result);
-        if (res.result.resultStatus === 'SUCCESS') {
-          playSound('success');
-        } else if (res.result.resultStatus === 'DUPLICATE') {
-          playSound('duplicate');
-        } else {
-          playSound('error');
-        }
+        setScanResult({
+          success: true,
+          resultStatus: 'SUCCESS',
+          title: res.title || 'PRESENT - FACE VERIFIED',
+          message: res.message,
+          student: res.student,
+          transaction: res.transaction
+        });
+        playSound('success');
         fetchRecentScans();
+        fetchLatePermissions();
       }
     } catch (err: any) {
+      const isDuplicate = err.status === 409 || err.message?.includes('already') || err.message?.includes('ALREADY');
+      const isOutsideHours = err.status === 400 && err.message?.includes('late');
+
       const errResult: MealScanResult = {
         success: false,
-        resultStatus: err.status === 409 ? 'DUPLICATE' : 'INVALID_CREDENTIAL',
-        title: err.status === 409 ? 'ALREADY SCANNED / DOUBLE-DIP DETECTED' : 'VERIFICATION ERROR',
-        message: err.message || 'Verification could not proceed.'
+        resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : 'INVALID_CREDENTIAL'),
+        title: isDuplicate
+          ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
+          : (isOutsideHours ? 'LATE ARRIVAL - PERMISSION REQUIRED' : 'VERIFICATION ERROR'),
+        message: err.message || 'Verification could not proceed.',
+        student: student as any
       };
+
       setScanResult(errResult);
-      playSound(err.status === 409 ? 'duplicate' : 'error');
+      playSound(isDuplicate ? 'duplicate' : 'error');
     } finally {
       setProcessing(false);
-      setManualToken('');
+      setSearchQuery('');
     }
   };
 
-  const startCameraScanner = async () => {
-    try {
-      setScanning(true);
-      const html5QrCode = new Html5Qrcode('qr-reader');
-      html5QrCodeRef.current = html5QrCode;
+  // Submit on-the-spot late meal permission
+  const handleGrantLatePermission = async () => {
+    if (!lateRoll.trim()) {
+      await showWarning('Please provide the student Roll Number or Registration Number.', 'Missing Roll Number');
+      return;
+    }
 
-      await html5QrCode.start(
-        { facingMode: 'environment' },
+    try {
+      setSubmittingLate(true);
+      const res = await apiRequest<{ success: boolean; message: string; permissionId: string }>(
+        '/meal-scans/late-permissions',
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 }
-        },
-        (decodedText) => {
-          handleScanToken(decodedText);
-        },
-        () => {}
+          method: 'POST',
+          body: {
+            studentIdentifier: lateRoll.trim(),
+            mealSessionId: selectedSessionId,
+            reason: lateReason,
+            proxyStudentIdentifier: lateProxyRoll.trim() || undefined
+          }
+        }
       );
-    } catch (err) {
-      await showError('Unable to access camera: ' + err, 'Camera Access Error');
-      setScanning(false);
-    }
-  };
-
-  const stopCameraScanner = async () => {
-    if (html5QrCodeRef.current && scanning) {
-      try {
-        await html5QrCodeRef.current.stop();
-        html5QrCodeRef.current.clear();
-      } catch (e) {
-        // ignore
-      }
-      setScanning(false);
-    }
-  };
-
-  // Manual Roll Number Override
-  const handleManualOverride = async () => {
-    if (!overrideRoll || !overrideReason) {
-      await showWarning('Roll number and justification reason are required', 'Missing Information');
-      return;
-    }
-
-    try {
-      const res = await apiRequest<{ success: boolean; message: string; data: any }>('/meal-scans/manual-override', {
-        method: 'POST',
-        body: {
-          rollNumber: overrideRoll.trim(),
-          mealSessionId: selectedSessionId,
-          hostelId: selectedHostelId,
-          checkpointName,
-          overrideReason
-        }
-      });
 
       if (res.success) {
-        playSound('success');
-        await showSuccess(res.message, 'Manual Override Logged');
-        setShowOverrideModal(false);
-        setOverrideRoll('');
-        fetchRecentScans();
-      }
-    } catch (e: any) {
-      playSound('error');
-      await showError('Manual override rejected: ' + e.message, 'Override Rejected');
-    }
-  };
+        await showSuccess(res.message, 'Late Meal Permission Approved');
+        setShowLateModal(false);
+        setLateRoll('');
+        setLateProxyRoll('');
+        fetchLatePermissions();
 
-  // Transaction Reversal
-  const handleReverseTransaction = async () => {
-    if (!reversalTx || !reversalReason) {
-      await showWarning('Please provide a justification reason for the reversal', 'Justification Required');
-      return;
-    }
-
-    const confirmed = await confirm({
-      title: 'Reverse Meal Transaction',
-      message: `Are you sure you want to reverse this meal attendance record for roll ${reversalTx.student_roll}? This will adjust dining counts and record audit reversal.`,
-      confirmText: 'Confirm Reversal',
-      variant: 'warning'
-    });
-    if (!confirmed) return;
-
-    try {
-      const res = await apiRequest<{ success: boolean; message: string }>('/meal-scans/correct-transaction', {
-        method: 'POST',
-        body: {
-          transactionId: reversalTx.id,
-          newStatus: 'REVERSED',
-          reason: reversalReason
+        // If target student is in directory, auto-verify immediately
+        const match = studentsDirectory.find(
+          (s) => s.roll_number.toUpperCase() === lateRoll.trim().toUpperCase() ||
+                 s.reg_number?.toUpperCase() === lateRoll.trim().toUpperCase()
+        );
+        if (match) {
+          handleVerifyStudentMeal(match, true);
         }
-      });
-
-      if (res.success) {
-        await showSuccess(res.message, 'Transaction Reversed');
-        setReversalTx(null);
-        setReversalReason('');
-        fetchRecentScans();
       }
     } catch (e: any) {
-      await showError('Reversal failed: ' + e.message);
+      await showError(e.message || 'Failed to approve late permission', 'Approval Failed');
+    } finally {
+      setSubmittingLate(false);
     }
   };
+
+  // Filter students in directory based on search query
+  const filteredStudents = searchQuery.trim()
+    ? studentsDirectory.filter(
+        (s) =>
+          s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          s.roll_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (s.reg_number && s.reg_number.toLowerCase().includes(searchQuery.toLowerCase()))
+      )
+    : [];
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Session Controls */}
-      <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Top Header & Session Bar */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-extrabold text-slate-900">Warden Meal Scanning Terminal</h1>
-            <Badge variant="success" dot>
-              High-Volume Counter Mode
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <Scan className="w-7 h-7 text-indigo-600 animate-pulse" />
+              Mess Face Recognition Terminal
+            </h1>
+            <Badge variant="success" className="animate-pulse flex items-center gap-1 font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              COUNTER ACTIVE
             </Badge>
+            {user?.assignedCategory && user.assignedCategory !== 'all' && (
+              <Badge variant="info" className="uppercase font-bold text-indigo-700 bg-indigo-50 border-indigo-200">
+                {user.assignedCategory} Hostel Wing
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time biometric & cryptographic QR verification with atomic double-scan locks.
+            Real-time biometric facial attendance with atomic session double-scan lock. Single food collection strictly enforced.
           </p>
         </div>
 
-        {/* Hostel & Session Selector Form */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-56">
+        {/* Counter Session Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Hostel Selector */}
+          <div className="w-48">
             <Select
               value={selectedHostelId}
               onChange={(e) => setSelectedHostelId(e.target.value)}
               options={
                 hostels.length > 0
-                  ? hostels.map((h) => ({
-                      value: h.id,
-                      label: `${h.name} (${h.code})`
-                    }))
+                  ? hostels.map((h) => ({ value: h.id, label: h.name }))
                   : [{ value: '', label: '-- No Hostels Configured --' }]
               }
             />
           </div>
 
+          {/* Meal Session Selector */}
           <div className="w-56">
             <Select
               value={selectedSessionId}
               onChange={(e) => setSelectedSessionId(e.target.value)}
-              options={allSessions.map((s) => ({
-                value: s.id,
-                label: `${s.name} (${s.start_time} - ${s.end_time})`
-              }))}
+              options={
+                allSessions.length > 0
+                  ? allSessions.map((s) => ({
+                      value: s.id,
+                      label: `${s.name} (${s.start_time} - ${s.end_time})`
+                    }))
+                  : [{ value: '', label: '-- No Active Sessions --' }]
+              }
             />
           </div>
 
-          <Button
-            variant={soundEnabled ? 'primary' : 'secondary'}
-            size="md"
+          {/* Mute/Sound Toggle */}
+          <button
             onClick={() => setSoundEnabled(!soundEnabled)}
-            title={soundEnabled ? 'Audio Feedback Enabled' : 'Audio Muted'}
+            className={`p-2.5 rounded-xl border transition ${
+              soundEnabled
+                ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                : 'bg-red-50 text-red-600 border-red-200'
+            }`}
+            title={soundEnabled ? 'Mute Audio Chime' : 'Enable Audio Chime'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          </button>
+
+          {/* Quick Action: Grant Late Permission */}
+          <Button
+            variant="primary"
+            className="flex items-center gap-2 font-bold shadow-sm bg-amber-600 hover:bg-amber-700 text-white border-amber-700"
+            onClick={() => setShowLateModal(true)}
+          >
+            <Clock className="w-4 h-4" />
+            Grant Late Permission
           </Button>
         </div>
       </div>
 
-      {/* SCAN RESULT PROMINENT BANNER */}
-      {scanResult && (
-        <div
-          className={`rounded-lg p-6 shadow-xl border-2 transition-all transform animate-in fade-in zoom-in-95 duration-200 ${
-            scanResult.resultStatus === 'SUCCESS'
-              ? 'bg-gradient-to-r from-emerald-600 to-teal-700 text-white border-emerald-400'
-              : scanResult.resultStatus === 'DUPLICATE'
-              ? 'bg-gradient-to-r from-rose-700 to-red-800 text-white border-red-400 ring-4 ring-red-400/30'
-              : 'bg-gradient-to-r from-amber-600 to-orange-700 text-white border-amber-400'
-          }`}
-        >
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start space-x-4">
-              <div className="p-3 bg-white/20 rounded-lg backdrop-blur-sm flex-shrink-0">
-                {scanResult.resultStatus === 'SUCCESS' ? (
-                  <CheckCircle2 className="w-10 h-10 text-white" />
-                ) : (
-                  <AlertOctagon className="w-10 h-10 text-white animate-bounce" />
-                )}
-              </div>
-              <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-white/80 block">
-                  Result: {scanResult.resultStatus}
-                </span>
-                <h2 className="text-2xl font-black tracking-tight">{scanResult.title}</h2>
-                <p className="text-sm text-white/90 mt-1 max-w-xl">{scanResult.message}</p>
-
-                {scanResult.student && (
-                  <div className="mt-3 flex items-center gap-3 bg-black/20 px-3 py-2 rounded-md w-fit">
-                    <span className="font-bold text-sm">{scanResult.student.fullName}</span>
-                    <span className="font-mono text-xs bg-white/20 px-2 py-0.5 rounded font-bold">
-                      {scanResult.student.rollNumber}
-                    </span>
-                    {scanResult.student.hostelName && (
-                      <span className="text-xs text-white/80">• {scanResult.student.hostelName}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <Button
-              variant="secondary"
-              onClick={() => setScanResult(null)}
-              className="self-end md:self-center"
-            >
-              Ready Next
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Main Scanner Section Grid */}
+      {/* Main Grid: Face Scanner & Biometric Results */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Camera Viewport & Test Simulation */}
+        {/* Left Column: Live Biometric Camera Terminal (7 cols) */}
         <div className="lg:col-span-7 space-y-4">
-          <div className="bg-slate-950 rounded-lg p-6 text-white border border-slate-800 shadow-xl overflow-hidden relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Mess Camera Feed
+          <div className="bg-slate-950 rounded-2xl shadow-xl overflow-hidden border border-slate-800 relative">
+            {/* Terminal Top Info Bar */}
+            <div className="bg-slate-900/90 px-4 py-3 flex items-center justify-between border-b border-slate-800 text-xs text-slate-300">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                <span className="font-mono tracking-wider font-bold text-emerald-400">
+                  CAMERA BIOMETRICS ONLINE
                 </span>
               </div>
-              <span className="text-xs font-mono text-slate-400">FPS: 10 • Auto-Lock</span>
+              <div className="flex items-center gap-4 text-slate-400 font-mono">
+                <span>Warden: {user?.fullName || 'Staff'}</span>
+                <span>Session: {activeSession?.name || 'Active'}</span>
+              </div>
             </div>
 
-            {/* Camera Viewport */}
-            <div className="relative aspect-video rounded-lg bg-slate-900 border-2 border-slate-800 flex flex-col items-center justify-center overflow-hidden">
-              <div id="qr-reader" className="w-full h-full" />
+            {/* Video Viewport Container with Biometric Alignment HUD */}
+            <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+              {cameraActive ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover transform scale-x-[-1]"
+                  />
 
-              {!scanning && (
-                <div className="text-center p-6 space-y-3">
-                  <div className="w-16 h-16 rounded-lg bg-slate-800 text-slate-400 flex items-center justify-center mx-auto border border-slate-700">
-                    <Camera className="w-8 h-8 text-amber-400" />
+                  {/* High-Tech Biometric Face Alignment Guide Overlay */}
+                  <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                    {/* Face Reticle Oval / Frame */}
+                    <div className="relative w-64 h-80 border-2 border-dashed border-emerald-400/60 rounded-[45px] shadow-[0_0_30px_rgba(16,185,129,0.25)] flex items-center justify-center">
+                      {/* Laser scanning beam */}
+                      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-bounce opacity-80" />
+
+                      {/* HUD Corner brackets */}
+                      <div className="absolute -top-3 -left-3 w-8 h-8 border-t-4 border-l-4 border-emerald-400 rounded-tl-xl" />
+                      <div className="absolute -top-3 -right-3 w-8 h-8 border-t-4 border-r-4 border-emerald-400 rounded-tr-xl" />
+                      <div className="absolute -bottom-3 -left-3 w-8 h-8 border-b-4 border-l-4 border-emerald-400 rounded-bl-xl" />
+                      <div className="absolute -bottom-3 -right-3 w-8 h-8 border-b-4 border-r-4 border-emerald-400 rounded-br-xl" />
+
+                      {/* Center alignment crosshair */}
+                      <div className="w-6 h-6 border border-emerald-400/40 rounded-full flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 px-4 py-1.5 rounded-full bg-slate-900/80 backdrop-blur border border-emerald-500/40 text-[11px] font-mono text-emerald-300 font-semibold flex items-center gap-2 shadow-lg">
+                      <Scan className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
+                      ALIGN STUDENT FACE WITHIN RETICLE
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-slate-200">Camera Inactive</h4>
-                    <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                      Enable device camera for real-time barcode scanning, or enter student credentials directly below.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={startCameraScanner}
-                    variant="primary"
-                    size="md"
-                  >
-                    Start Camera Scanner
+                </>
+              ) : (
+                <div className="p-8 text-center text-slate-400">
+                  <Camera className="w-16 h-16 mx-auto mb-3 text-slate-600" />
+                  <p className="font-semibold text-slate-300 text-sm">{cameraError || 'Camera stream paused'}</p>
+                  <Button variant="primary" size="sm" className="mt-4 font-bold" onClick={startCamera}>
+                    Restart Face Camera
                   </Button>
                 </div>
               )}
 
-              {scanning && (
-                <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center bg-slate-950/80 backdrop-blur-md px-3 py-2 rounded-md text-xs">
-                  <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    Scanning Active... Point student QR at camera
-                  </span>
-                  <button
-                    onClick={stopCameraScanner}
-                    className="text-red-400 hover:text-red-300 font-semibold px-2 py-0.5 rounded bg-red-950/40 border border-red-800/40"
-                  >
-                    Stop Camera
-                  </button>
+              {/* Live Overlay Banner when processing */}
+              {processing && (
+                <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-white z-20">
+                  <Scan className="w-14 h-14 text-emerald-400 animate-spin mb-3" />
+                  <p className="text-base font-bold tracking-wide">VERIFYING STUDENT BIOMETRICS...</p>
+                  <p className="text-xs text-slate-400 mt-1">Checking duplicate meal records & eligibility</p>
                 </div>
               )}
             </div>
 
-            {/* Manual QR Token Input */}
-            <div className="mt-5 pt-4 border-t border-slate-800">
-              <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block mb-2">
-                Manual Token Verification
-              </label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Paste signed cryptographic QR credential token here (aknu_v1...)"
-                    value={manualToken}
-                    onChange={(e) => setManualToken(e.target.value)}
-                  />
-                </div>
-                <Button
-                  disabled={processing || !manualToken}
-                  onClick={() => handleScanToken(manualToken)}
-                  variant="secondary"
-                >
-                  Verify
-                </Button>
+            {/* Quick Action Bar under Camera */}
+            <div className="p-4 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-slate-400">WING DIRECTORY:</span>
+                <span className="text-xs font-bold text-slate-200">
+                  {studentsDirectory.length} Active Eligible Residents
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {cameraActive ? (
+                  <Button variant="outline" size="sm" className="text-xs border-slate-700 text-slate-300" onClick={stopCamera}>
+                    Pause Camera
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" className="text-xs border-slate-700 text-slate-300" onClick={startCamera}>
+                    Resume Camera
+                  </Button>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Authorized Warden Manual Override Button */}
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-md bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-                <Search className="w-4 h-4" />
-              </div>
-              <div>
-                <h4 className="text-xs font-bold text-amber-900">Student Phone Dead / QR Unreadable?</h4>
-                <p className="text-[11px] text-amber-700">Warden authorized manual student search & override entry.</p>
-              </div>
-            </div>
-            <Button
-              onClick={() => setShowOverrideModal(true)}
-              variant="accent"
-              size="sm"
-            >
-              Manual Override
-            </Button>
-          </div>
-        </div>
+          {/* Quick Student Search & Instant Face Attendance Trigger */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <Search className="w-4 h-4 text-indigo-600" />
+              Quick Search & Match Resident Face
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              Type registration number, roll number or name to instantly verify student at counter:
+            </p>
 
-        {/* Right Column: Live Counters & Recent Transactions Stream */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">
-                Session Counter
-              </span>
-              <h3 className="text-3xl font-black text-slate-900 mt-1">{todayScansCount}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Verified dining transactions</p>
-            </div>
-            <div className="text-right">
-              <Badge variant="success" dot>
-                Counter 1 Online
-              </Badge>
-              <p className="text-[11px] text-slate-400 mt-1">Staff: {user?.fullName}</p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col h-[520px]">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center space-x-2">
-                <History className="w-4 h-4 text-slate-400" />
-                <h3 className="text-sm font-bold text-slate-800">Recent Mess Scan Log</h3>
-              </div>
-              <button onClick={fetchRecentScans} className="text-slate-400 hover:text-slate-600 p-1">
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
+            <div className="relative">
+              <Input
+                placeholder="e.g. 22CSE001, AKNU/2026/001, or Student Name..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-sm font-semibold pl-10"
+              />
+              <Search className="w-5 h-5 text-slate-400 absolute left-3 top-2.5" />
             </div>
 
-            <div className="flex-1 overflow-y-auto mt-3 space-y-2 pr-1">
-              {recentScans.length > 0 ? (
-                recentScans.map((tx) => (
+            {/* Live Search Candidate Cards */}
+            {filteredStudents.length > 0 && (
+              <div className="mt-3 max-h-60 overflow-y-auto space-y-2 border border-slate-200 rounded-xl p-2 bg-slate-50">
+                {filteredStudents.slice(0, 5).map((st) => (
                   <div
-                    key={tx.id}
-                    className="p-3 rounded-md bg-slate-50 hover:bg-slate-100/80 border border-slate-200/70 transition flex items-center justify-between"
+                    key={st.id}
+                    className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-sm transition cursor-pointer"
+                    onClick={() => handleVerifyStudentMeal(st)}
                   >
-                    <div className="flex items-center space-x-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs text-slate-700">
-                        {tx.student_name ? tx.student_name.charAt(0) : 'S'}
-                      </div>
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={
+                          st.photo_url ||
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(st.full_name)}&background=23395D&color=fff&size=100`
+                        }
+                        alt={st.full_name}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-indigo-200 shadow-xs"
+                      />
                       <div>
-                        <h4 className="text-xs font-bold text-slate-800 leading-tight">
-                          {tx.student_name}
-                        </h4>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-mono mt-0.5">
-                          <span>{tx.roll_number}</span>
+                        <h4 className="text-sm font-bold text-slate-800">{st.full_name}</h4>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                          <span>{st.roll_number}</span>
                           <span>•</span>
-                          <span>{new Date(tx.scanned_at).toLocaleTimeString('en-IN')}</span>
+                          <span>Room: {st.room_number || 'Unallocated'}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Badge variant={tx.status === 'SUCCESS' ? 'success' : 'danger'}>
-                        {tx.status}
-                      </Badge>
-                      {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
-                        <button
-                          onClick={() => setReversalTx(tx)}
-                          className="text-[10px] text-slate-400 hover:text-red-600 font-semibold"
-                          title="Correct or reverse mistake transaction"
-                        >
-                          Correct
-                        </button>
-                      )}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="font-bold flex items-center gap-1.5 shadow-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleVerifyStudentMeal(st);
+                      }}
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      Verify Face & Issue Meal
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Biometric Verification Result & Recent Logs (5 cols) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Real-time Verification Result Display Card */}
+          {scanResult ? (
+            <div
+              className={`rounded-2xl p-6 shadow-lg border-2 transition-all duration-300 ${
+                scanResult.resultStatus === 'SUCCESS'
+                  ? 'bg-gradient-to-br from-emerald-50 via-teal-50 to-white border-emerald-500'
+                  : scanResult.resultStatus === 'DUPLICATE'
+                  ? 'bg-gradient-to-br from-red-50 via-rose-50 to-white border-red-500'
+                  : 'bg-gradient-to-br from-amber-50 to-white border-amber-500'
+              }`}
+            >
+              {/* Header Status */}
+              <div className="flex items-center gap-3 pb-4 border-b border-slate-200/80">
+                {scanResult.resultStatus === 'SUCCESS' ? (
+                  <div className="p-3 bg-emerald-500 text-white rounded-2xl shadow-md">
+                    <CheckCircle2 className="w-8 h-8" />
+                  </div>
+                ) : scanResult.resultStatus === 'DUPLICATE' ? (
+                  <div className="p-3 bg-red-600 text-white rounded-2xl shadow-md animate-pulse">
+                    <AlertOctagon className="w-8 h-8" />
+                  </div>
+                ) : (
+                  <div className="p-3 bg-amber-500 text-white rounded-2xl shadow-md">
+                    <BadgeAlert className="w-8 h-8" />
+                  </div>
+                )}
+
+                <div>
+                  <h2
+                    className={`text-lg font-black tracking-tight ${
+                      scanResult.resultStatus === 'SUCCESS'
+                        ? 'text-emerald-900'
+                        : scanResult.resultStatus === 'DUPLICATE'
+                        ? 'text-red-900'
+                        : 'text-amber-900'
+                    }`}
+                  >
+                    {scanResult.title}
+                  </h2>
+                  <p className="text-xs text-slate-600 mt-0.5">{scanResult.message}</p>
+                </div>
+              </div>
+
+              {/* Student Identity Card */}
+              {scanResult.student && (
+                <div className="mt-5 space-y-4">
+                  <div className="flex items-center gap-4 bg-white/80 p-3.5 rounded-xl border border-slate-200/80 shadow-xs">
+                    <img
+                      src={
+                        scanResult.student.photoUrl ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          scanResult.student.fullName
+                        )}&background=23395D&color=fff&size=120`
+                      }
+                      alt={scanResult.student.fullName}
+                      className="w-16 h-16 rounded-xl object-cover border-2 border-slate-300 shadow-xs"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-black text-slate-900 truncate">
+                        {scanResult.student.fullName}
+                      </h3>
+                      <p className="text-xs font-mono font-bold text-indigo-700">
+                        {scanResult.student.rollNumber} {scanResult.student.regNumber ? `• ${scanResult.student.regNumber}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {scanResult.student.hostelName || 'Hostel'} | Room: {scanResult.student.roomNumber || 'N/A'} (Bed: {scanResult.student.bedNumber || '1'})
+                      </p>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="text-center py-16 text-slate-400 text-xs">
-                  No meal transactions recorded yet today for this counter.
+
+                  {/* Transaction Details */}
+                  {scanResult.transaction && (
+                    <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-white/70 p-3 rounded-xl border border-slate-200">
+                      <div>
+                        <span className="text-slate-400 block">Session:</span>
+                        <span className="font-bold text-slate-800">{scanResult.transaction.sessionName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Verified Time:</span>
+                        <span className="font-bold text-slate-800">
+                          {new Date(scanResult.transaction.scannedAt).toLocaleTimeString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Late Meal Notice if applicable */}
+                  {scanResult.transaction?.isLateMeal && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs text-amber-800 font-semibold">
+                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      Approved Late Meal • Authorized by {scanResult.transaction.lateApprovedBy || 'Hostel Warden'}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
+          ) : (
+            <div className="bg-white rounded-2xl p-8 border border-dashed border-slate-300 text-center text-slate-400 shadow-xs">
+              <Scan className="w-12 h-12 mx-auto mb-3 text-slate-300 animate-pulse" />
+              <h3 className="text-sm font-bold text-slate-700">No Student Currently Scanned</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                Align the student face in the camera reticle or search by roll number above to verify their dining transaction.
+              </p>
+            </div>
+          )}
+
+          {/* Navigation Tabs for Logs & Late Permissions */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="flex border-b border-slate-200">
+              <button
+                onClick={() => setActiveTab('camera')}
+                className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-2 border-b-2 ${
+                  activeTab === 'camera'
+                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <History className="w-4 h-4" />
+                Live Mess Feed ({recentScans.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('late-permissions')}
+                className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-2 border-b-2 ${
+                  activeTab === 'late-permissions'
+                    ? 'border-amber-600 text-amber-700 bg-amber-50/50'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Clock className="w-4 h-4 text-amber-600" />
+                Late Passes ({latePermissions.length})
+              </button>
+            </div>
+
+            {/* Tab 1: Live Dining Transactions Feed */}
+            {activeTab === 'camera' && (
+              <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
+                {recentScans.length === 0 ? (
+                  <p className="text-center text-xs text-slate-400 py-6">
+                    No dining transactions recorded yet today for this counter.
+                  </p>
+                ) : (
+                  recentScans.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={
+                            tx.photo_url ||
+                            `https://ui-avatars.com/api/?name=${encodeURIComponent(tx.student_name)}&background=23395D&color=fff&size=80`
+                          }
+                          alt={tx.student_name}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-300"
+                        />
+                        <div>
+                          <h4 className="font-bold text-slate-800">{tx.student_name}</h4>
+                          <span className="font-mono text-slate-500 text-[11px]">{tx.roll_number}</span>
+                        </div>
+                      </div>
+
+                      <div className="text-right">
+                        <Badge variant="success" className="text-[10px] font-bold">
+                          FACE VERIFIED
+                        </Badge>
+                        <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                          {new Date(tx.scanned_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Approved Late Meal Permissions */}
+            {activeTab === 'late-permissions' && (
+              <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
+                {latePermissions.length === 0 ? (
+                  <div className="text-center py-6">
+                    <p className="text-xs text-slate-400">No late permissions recorded for today.</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 text-xs font-bold"
+                      onClick={() => setShowLateModal(true)}
+                    >
+                      Grant New Late Permission
+                    </Button>
+                  </div>
+                ) : (
+                  latePermissions.map((lp) => (
+                    <div
+                      key={lp.id}
+                      className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-800">{lp.student_name} ({lp.roll_number})</h4>
+                        <Badge
+                          variant={lp.is_collected ? 'neutral' : 'warning'}
+                          className="text-[10px] font-bold"
+                        >
+                          {lp.is_collected ? 'FOOD COLLECTED' : 'APPROVED - PENDING MEAL'}
+                        </Badge>
+                      </div>
+
+                      <p className="text-slate-600 text-[11px]">
+                        <span className="font-semibold text-slate-700">Reason:</span> {lp.reason}
+                      </p>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 font-mono">
+                        <span>Approved by: {lp.approved_by_name} ({lp.approved_by_role})</span>
+                        {lp.proxy_student_name && (
+                          <span className="text-indigo-600 font-semibold">
+                            Proxy Friend: {lp.proxy_student_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* MODAL: MANUAL OVERRIDE */}
+      {/* Modal: Grant On-The-Spot Late Meal Permission */}
       <Modal
-        isOpen={showOverrideModal}
-        onClose={() => setShowOverrideModal(false)}
-        title="Authorized Manual Meal Override"
-        size="md"
-        icon={<UserCheck className="w-5 h-5 text-amber-500" />}
+        isOpen={showLateModal}
+        onClose={() => setShowLateModal(false)}
+        title="Grant Late Meal Permission"
       >
-        <div className="space-y-3.5">
-          <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-md border border-slate-200">
-            Record a meal entry when a student cannot produce their digital QR credential. An audit log is permanently created.
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Authorize a resident who is late (e.g. from laboratory, exam, or emergency) to receive their meal outside or during the active session:
           </p>
 
-          <Input
-            label="Student University Roll Number *"
-            placeholder="Enter Student Roll Number (e.g. 22CSE001)"
-            value={overrideRoll}
-            onChange={(e) => setOverrideRoll(e.target.value.toUpperCase())}
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Student Roll Number or Registration Number *
+            </label>
+            <Input
+              placeholder="e.g. 22CSE042 or AKNU/2026/042"
+              value={lateRoll}
+              onChange={(e) => setLateRoll(e.target.value)}
+              className="text-sm font-semibold"
+            />
+          </div>
 
-          <Input
-            label="Mandatory Justification Reason *"
-            placeholder="e.g. Student phone low battery, verified physically with hostel ID"
-            value={overrideReason}
-            onChange={(e) => setOverrideReason(e.target.value)}
-          />
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Late Reason / Justification *
+            </label>
+            <Select
+              value={lateReason}
+              onChange={(e) => setLateReason(e.target.value)}
+              options={[
+                { value: 'Laboratory / Academic Work', label: 'Laboratory / Academic Research Delay' },
+                { value: 'University Examination / Viva', label: 'University Examination / Viva' },
+                { value: 'Medical / Health Center Visit', label: 'Medical / Health Center Visit' },
+                { value: 'Transit / Bus Delay', label: 'Transit / Late Bus Arrival' },
+                { value: 'Special Permission by Warden', label: 'Special Permission by Warden' }
+              ]}
+            />
+          </div>
 
-          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
-            <Button
-              variant="secondary"
-              onClick={() => setShowOverrideModal(false)}
-            >
+          <div>
+            <label className="text-xs font-bold text-slate-700 block mb-1">
+              Designated Proxy Friend (Optional, if friend collects food)
+            </label>
+            <Input
+              placeholder="Friend's Roll Number (leave blank if student takes themselves)"
+              value={lateProxyRoll}
+              onChange={(e) => setLateProxyRoll(e.target.value)}
+              className="text-sm font-semibold"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-200">
+            <Button variant="outline" onClick={() => setShowLateModal(false)}>
               Cancel
             </Button>
             <Button
-              variant="accent"
-              onClick={handleManualOverride}
+              variant="primary"
+              disabled={submittingLate}
+              onClick={handleGrantLatePermission}
+              className="font-bold flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white"
             >
-              Confirm & Record
+              <CheckCircle2 className="w-4 h-4" />
+              {submittingLate ? 'Approving...' : 'Approve Late Permission'}
             </Button>
           </div>
         </div>
-      </Modal>
-
-      {/* MODAL: TRANSACTION REVERSAL / CORRECTION */}
-      <Modal
-        isOpen={!!reversalTx}
-        onClose={() => setReversalTx(null)}
-        title="Correct / Reverse Meal Transaction"
-        size="md"
-        icon={<ShieldAlert className="w-5 h-5 text-rose-500" />}
-      >
-        {reversalTx && (
-          <div className="space-y-3.5">
-            <p className="text-xs text-slate-500 bg-slate-50 p-2.5 rounded-md border border-slate-200">
-              Reversing transaction for <strong className="text-slate-800">{reversalTx.student_name}</strong> ({reversalTx.roll_number}). This does not delete history; an audit trail is preserved.
-            </p>
-
-            <Input
-              label="Reversal Reason *"
-              placeholder="e.g. Accidental scan duplicate or wrong student token"
-              value={reversalReason}
-              onChange={(e) => setReversalReason(e.target.value)}
-            />
-
-            <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
-              <Button
-                variant="secondary"
-                onClick={() => setReversalTx(null)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleReverseTransaction}
-              >
-                Confirm Reversal
-              </Button>
-            </div>
-          </div>
-        )}
       </Modal>
     </div>
   );

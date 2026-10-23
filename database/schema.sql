@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     role VARCHAR(50) NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
+    gender_wing VARCHAR(10) DEFAULT 'all' CHECK (gender_wing IN ('boys', 'girls', 'all')),
     is_active BOOLEAN DEFAULT TRUE,
     is_first_login BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -206,12 +207,30 @@ CREATE TABLE IF NOT EXISTS meal_transactions (
     scanned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     scanned_by_user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     status VARCHAR(20) DEFAULT 'SUCCESS' CHECK (status IN ('SUCCESS', 'REVERSED')),
-    verification_method VARCHAR(30) DEFAULT 'QR_SCAN' CHECK (verification_method IN ('QR_SCAN', 'MANUAL_OVERRIDE')),
+    verification_method VARCHAR(30) DEFAULT 'FACE_RECOGNITION' CHECK (verification_method IN ('FACE_RECOGNITION', 'QR_SCAN', 'MANUAL_OVERRIDE', 'PROXY_COLLECTION')),
+    proxy_student_id VARCHAR(50) REFERENCES students(id) ON DELETE SET NULL,
+    proxy_approved_by VARCHAR(50) REFERENCES users(id) ON DELETE SET NULL,
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- CRITICAL ATOMIC UNIQUE CONSTRAINT: Prevents double meal recording for the same student on the same day & session
     CONSTRAINT uq_meal_student_date_session UNIQUE (student_id, service_date, meal_session_id)
 );
+
+CREATE TABLE IF NOT EXISTS proxy_meal_permissions (
+    id VARCHAR(50) PRIMARY KEY,
+    target_student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    proxy_student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    meal_session_id VARCHAR(50) NOT NULL REFERENCES meal_sessions(id),
+    service_date DATE NOT NULL,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected', 'collected')),
+    approved_by_user_id VARCHAR(50) NOT NULL REFERENCES users(id),
+    is_collected BOOLEAN DEFAULT FALSE,
+    collected_at TIMESTAMP,
+    collected_by_staff_id VARCHAR(50) REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_proxy_target_date ON proxy_meal_permissions(target_student_id, service_date, meal_session_id);
 
 CREATE TABLE IF NOT EXISTS scan_attempts (
     id VARCHAR(50) PRIMARY KEY,
@@ -435,3 +454,15 @@ CREATE INDEX IF NOT EXISTS idx_meal_tx_student_date ON meal_transactions(student
 CREATE INDEX IF NOT EXISTS idx_scan_attempts_date ON scan_attempts(scanned_at);
 CREATE INDEX IF NOT EXISTS idx_complaints_hostel ON complaints(hostel_id);
 CREATE INDEX IF NOT EXISTS idx_leave_student ON leave_applications(student_id);
+
+-- 13. PASSWORD RESET OTPS
+CREATE TABLE IF NOT EXISTS password_reset_otps (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    otp VARCHAR(10) NOT NULL,
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pw_reset_user ON password_reset_otps(user_id, otp);

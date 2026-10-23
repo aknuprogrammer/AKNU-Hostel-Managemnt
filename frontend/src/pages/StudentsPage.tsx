@@ -721,7 +721,7 @@ export const StudentsPage: React.FC = () => {
                       <RefreshCw className="w-3.5 h-3.5" />
                     </Button>
 
-                    {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
+                    {['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(user?.role || '') && (
                       <Button
                         variant="ghost"
                         size="xs"
@@ -985,7 +985,7 @@ export const StudentsPage: React.FC = () => {
               </Button>
 
               <div className="flex items-center gap-2">
-                {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
+                {['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(user?.role || '') && (
                   <Button
                     variant="outline"
                     size="sm"

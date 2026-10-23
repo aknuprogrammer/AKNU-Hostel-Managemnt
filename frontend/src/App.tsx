@@ -6,6 +6,7 @@ import { Sidebar, ActiveTab } from './components/Sidebar.js';
 import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { DigitalIdCardModal } from './components/DigitalIdCardModal.js';
 import { SetupPasswordModal } from './components/SetupPasswordModal.js';
+import { ForgotPasswordModal } from './components/ForgotPasswordModal.js';
 import { AknuLogo } from './components/AknuLogo.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { MealScannerPage } from './pages/MealScannerPage.js';
@@ -99,6 +100,7 @@ export const App: React.FC = () => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -130,7 +132,7 @@ export const App: React.FC = () => {
             window.history.replaceState({ tab: 'mess' }, '', '/mess');
           }
         }
-      } else if (user.role === 'super_admin' || user.role === 'univ_mgmt') {
+      } else if (user.role === 'super_admin') {
         if (activeTab !== 'dashboard' && (window.location.pathname === '/' || window.location.pathname === '/dashboard')) {
           setActiveTabState('dashboard');
         }
@@ -248,6 +250,15 @@ export const App: React.FC = () => {
                       )}
                     </button>
                   </div>
+                  <div className="flex justify-end pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(true)}
+                      className="text-xs font-semibold text-[#5276A5] hover:text-[#23395D] hover:underline transition"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
                 </div>
 
                 <button
@@ -276,6 +287,15 @@ export const App: React.FC = () => {
           }}
           initialIdentifier={email}
           initialTemporaryPassword={password}
+        />
+
+        <ForgotPasswordModal
+          isOpen={showForgotModal}
+          onClose={() => setShowForgotModal(false)}
+          initialIdentifier={email}
+          onSuccess={() => {
+            setShowForgotModal(false);
+          }}
         />
       </div>
     );

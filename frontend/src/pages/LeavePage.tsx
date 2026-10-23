@@ -142,8 +142,8 @@ export const LeavePage: React.FC = () => {
   };
 
   const role = user?.role || 'student';
-  const isSecurity = role === 'security_staff' || role === 'super_admin';
-  const isWarden = ['super_admin', 'chief_warden', 'hostel_warden'].includes(role);
+  const isSecurity = ['super_admin', 'junior_assistant', 'chief_warden', 'assistant_warden'].includes(role);
+  const isWarden = ['super_admin', 'chief_warden', 'assistant_warden'].includes(role);
 
   return (
     <div className="space-y-3">

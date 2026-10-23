@@ -90,7 +90,7 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
           </div>
 
           {/* Quick Action Button for Warden / Mess Scanner */}
-          {['super_admin', 'chief_warden', 'hostel_warden', 'mess_manager'].includes(role) && (
+          {['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role) && (
             <Button
               variant="accent"
               size="md"

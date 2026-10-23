@@ -98,7 +98,7 @@ export const AccountsPage: React.FC = () => {
     }
   };
 
-  const isAccounts = ['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '');
+  const isAccounts = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(user?.role || '');
 
   return (
     <div className="space-y-3">

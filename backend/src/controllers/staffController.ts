@@ -4,13 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { executeQuery, executeTransaction } from '../config/database.js';
 import { AuthRequest, logAudit } from '../middleware/auth.js';
 
-export const RECORD_ONLY_ROLES = [
-  'univ_mgmt',
-  'mess_staff',
-  'security_staff',
-  'accounts_staff',
-  'maint_staff'
-];
+export const RECORD_ONLY_ROLES: string[] = [];
 
 export async function getStaffList(req: AuthRequest, res: Response): Promise<void> {
   try {
@@ -23,15 +17,13 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
       LEFT JOIN user_hostel_assignments uha ON u.id = uha.user_id
       LEFT JOIN hostels h ON uha.hostel_id = h.id
       WHERE u.role NOT IN ('student', 'super_admin')
-      ORDER BY
-        CASE WHEN u.role IN ('univ_mgmt', 'mess_staff', 'security_staff', 'accounts_staff', 'maint_staff') THEN 1 ELSE 0 END,
-        u.full_name ASC
+      ORDER BY u.full_name ASC
     `);
 
     const staffWithAccessFlag = result.rows.map((row: any) => ({
       ...row,
-      isRecordOnly: RECORD_ONLY_ROLES.includes(row.role),
-      accessType: RECORD_ONLY_ROLES.includes(row.role) ? 'Record Only (No Login)' : 'Active Login Access'
+      isRecordOnly: false,
+      accessType: 'Active System Access'
     }));
 
     res.json({ success: true, data: staffWithAccessFlag });

@@ -108,7 +108,7 @@ export const ComplaintsPage: React.FC = () => {
   };
 
   const role = user?.role || 'student';
-  const canManage = ['super_admin', 'chief_warden', 'hostel_warden', 'maint_staff'].includes(role);
+  const canManage = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
 
   const getPriorityBadgeVariant = (priority: string) => {
     switch (priority) {

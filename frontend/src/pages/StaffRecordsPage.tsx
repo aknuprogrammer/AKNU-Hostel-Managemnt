@@ -70,7 +70,7 @@ export const StaffRecordsPage: React.FC = () => {
   // Add staff modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState('mess_staff');
+  const [role, setRole] = useState('junior_assistant');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [hostelId, setHostelId] = useState('');
@@ -82,7 +82,7 @@ export const StaffRecordsPage: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [editFullName, setEditFullName] = useState('');
-  const [editRole, setEditRole] = useState('mess_staff');
+  const [editRole, setEditRole] = useState('junior_assistant');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editHostelId, setEditHostelId] = useState('');
@@ -248,7 +248,7 @@ export const StaffRecordsPage: React.FC = () => {
           </div>
         </div>
 
-        {['super_admin', 'chief_warden', 'hostel_warden'].includes(user?.role || '') && (
+        {['super_admin', 'chief_warden'].includes(user?.role || '') && (
           <Button
             onClick={() => setShowAddModal(true)}
             leftIcon={<UserPlus className="w-4 h-4" />}
@@ -277,32 +277,36 @@ export const StaffRecordsPage: React.FC = () => {
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400 block">Total Registered Staff</span>
+          <span className="text-xs font-semibold text-slate-400 block">Total Staff Registered</span>
           <div className="mt-1 flex items-baseline justify-between">
             <span className="text-2xl font-black text-slate-800">{staff.length}</span>
             <span className="text-xs font-bold text-slate-500">Personnel</span>
           </div>
         </div>
 
-        <div className="bg-amber-50/70 p-5 rounded-lg border border-amber-200/80 shadow-sm">
-          <div className="flex items-center space-x-1.5 text-amber-800">
-            <Lock className="w-4 h-4" />
-            <span className="text-xs font-bold">Record-Only Staff (No Login)</span>
-          </div>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-amber-900">{recordOnlyCount}</span>
-            <span className="text-[11px] font-semibold text-amber-700">Mess, Security, Maint, Accts, Mgmt</span>
-          </div>
-        </div>
-
         <div className="bg-blue-50/70 p-5 rounded-lg border border-blue-200/80 shadow-sm">
           <div className="flex items-center space-x-1.5 text-blue-800">
             <Shield className="w-4 h-4" />
-            <span className="text-xs font-bold">Active System Operators</span>
+            <span className="text-xs font-bold">Junior Assistants</span>
           </div>
           <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-black text-blue-900">{activeLoginCount}</span>
-            <span className="text-[11px] font-semibold text-blue-700">Admins, Wardens & Mess Mgrs</span>
+            <span className="text-2xl font-black text-blue-900">
+              {staff.filter((s) => s.role === 'junior_assistant').length}
+            </span>
+            <span className="text-[11px] font-semibold text-blue-700">Room Alloc. & Mess Scanners</span>
+          </div>
+        </div>
+
+        <div className="bg-amber-50/70 p-5 rounded-lg border border-amber-200/80 shadow-sm">
+          <div className="flex items-center space-x-1.5 text-amber-800">
+            <Users className="w-4 h-4" />
+            <span className="text-xs font-bold">Wardens (Chief & Assistant)</span>
+          </div>
+          <div className="mt-1 flex items-baseline justify-between">
+            <span className="text-2xl font-black text-amber-900">
+              {staff.filter((s) => ['chief_warden', 'assistant_warden'].includes(s.role)).length}
+            </span>
+            <span className="text-[11px] font-semibold text-amber-700">Wing Oversight & Approvals</span>
           </div>
         </div>
       </div>
@@ -323,17 +327,10 @@ export const StaffRecordsPage: React.FC = () => {
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
             options={[
-              { value: 'ALL', label: `All Staff Categories (${staff.length})` },
-              { value: 'RECORD_ONLY', label: `Record-Only Personnel (${recordOnlyCount})` },
-              { value: 'ACTIVE_LOGIN', label: `Active System Operators (${activeLoginCount})` },
-              { value: 'mess_staff', label: 'Mess Staff' },
-              { value: 'security_staff', label: 'Security Staff' },
-              { value: 'maint_staff', label: 'Maintenance Staff' },
-              { value: 'accounts_staff', label: 'Accounts Staff' },
-              { value: 'univ_mgmt', label: 'University Management' },
-              { value: 'hostel_warden', label: 'Hostel Wardens' },
-              { value: 'chief_warden', label: 'Chief Warden' },
-              { value: 'mess_manager', label: 'Mess Manager' }
+              { value: 'ALL', label: `All Staff Roles (${staff.length})` },
+              { value: 'junior_assistant', label: 'Junior Assistants' },
+              { value: 'assistant_warden', label: 'Assistant Wardens' },
+              { value: 'chief_warden', label: 'Chief Wardens' }
             ]}
           />
         </div>
@@ -486,19 +483,12 @@ export const StaffRecordsPage: React.FC = () => {
               label="Staff Role *"
               value={role}
               onChange={(e) => setRole(e.target.value)}
-            >
-              <optgroup label="Record-Only (No Login Access)">
-                <option value="mess_staff">Mess Staff</option>
-                <option value="security_staff">Security Staff</option>
-                <option value="maint_staff">Maintenance Staff</option>
-                <option value="accounts_staff">Accounts Staff</option>
-                <option value="univ_mgmt">University Management</option>
-              </optgroup>
-              <optgroup label="Active System Operators">
-                <option value="hostel_warden">Hostel Warden</option>
-                <option value="mess_manager">Mess Manager</option>
-              </optgroup>
-            </Select>
+              options={[
+                { value: 'junior_assistant', label: 'Junior Assistant (Room Allocation & Mess Face Scanning)' },
+                { value: 'assistant_warden', label: 'Assistant Warden (Hostel Management & Meal Approvals)' },
+                { value: 'chief_warden', label: 'Chief Warden (Wing Oversight & Permissions)' }
+              ]}
+            />
 
             <Select
               label="Hostel Assignment"
@@ -584,14 +574,9 @@ export const StaffRecordsPage: React.FC = () => {
               value={editRole}
               onChange={(e) => setEditRole(e.target.value)}
               options={[
-                { value: 'mess_staff', label: 'Mess Staff (Record Only)' },
-                { value: 'security_staff', label: 'Security Staff (Record Only)' },
-                { value: 'maint_staff', label: 'Maintenance Staff (Record Only)' },
-                { value: 'accounts_staff', label: 'Accounts Staff (Record Only)' },
-                { value: 'univ_mgmt', label: 'University Management (Record Only)' },
-                { value: 'hostel_warden', label: 'Hostel Warden (Active Login)' },
-                { value: 'chief_warden', label: 'Chief Warden (Active Login)' },
-                { value: 'mess_manager', label: 'Mess Manager (Active Login)' }
+                { value: 'junior_assistant', label: 'Junior Assistant (Room Allocation & Mess Face Scanning)' },
+                { value: 'assistant_warden', label: 'Assistant Warden (Hostel Management & Meal Approvals)' },
+                { value: 'chief_warden', label: 'Chief Warden (Wing Oversight & Permissions)' }
               ]}
             />
 
