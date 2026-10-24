@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS courses (
     code VARCHAR(20) NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
     duration_years INT DEFAULT 2,
+    program_level VARCHAR(20) DEFAULT 'UG' CHECK (program_level IN ('UG', 'PG', 'PhD')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -129,6 +130,7 @@ CREATE TABLE IF NOT EXISTS students (
     dob DATE,
     department_id VARCHAR(50) REFERENCES departments(id) ON DELETE SET NULL,
     course_id VARCHAR(50) REFERENCES courses(id) ON DELETE SET NULL,
+    program_level VARCHAR(20) DEFAULT 'UG' CHECK (program_level IN ('UG', 'PG', 'PhD')),
     academic_year_id VARCHAR(50) REFERENCES academic_years(id) ON DELETE SET NULL,
     year_of_study INT DEFAULT 1,
     current_semester INT DEFAULT 1,

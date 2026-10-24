@@ -152,7 +152,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
 
             <Input
               label="Email Address or Registration Number"
-              placeholder="e.g. ja.boys@aknu.edu.in or 22CSE042"
+              placeholder="e.g. staff@gmail.com, warden@aknu.edu.in, or 22CSE042"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
               required

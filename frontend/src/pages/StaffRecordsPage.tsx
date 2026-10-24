@@ -35,6 +35,13 @@ import {
   TableEmpty
 } from '../components/ui/index.js';
 
+interface AssignedHostel {
+  id: string;
+  name: string;
+  code: string;
+  category?: 'boys' | 'girls';
+}
+
 interface StaffMember {
   id: string;
   email: string;
@@ -45,6 +52,8 @@ interface StaffMember {
   hostel_id?: string;
   hostel_name?: string;
   hostel_code?: string;
+  assigned_hostels?: AssignedHostel[];
+  hostel_ids?: string[];
   isRecordOnly: boolean;
   accessType: string;
   is_active?: boolean;
@@ -55,6 +64,7 @@ interface HostelOption {
   id: string;
   name: string;
   code: string;
+  category?: 'boys' | 'girls';
 }
 
 export const StaffRecordsPage: React.FC = () => {
@@ -73,7 +83,7 @@ export const StaffRecordsPage: React.FC = () => {
   const [role, setRole] = useState('junior_assistant');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [hostelId, setHostelId] = useState('');
+  const [selectedHostelIds, setSelectedHostelIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -85,7 +95,7 @@ export const StaffRecordsPage: React.FC = () => {
   const [editRole, setEditRole] = useState('junior_assistant');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editHostelId, setEditHostelId] = useState('');
+  const [editSelectedHostelIds, setEditSelectedHostelIds] = useState<string[]>([]);
   const [editIsActive, setEditIsActive] = useState(true);
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editError, setEditError] = useState('');
@@ -130,7 +140,7 @@ export const StaffRecordsPage: React.FC = () => {
           role,
           email: email.trim() || undefined,
           phone: phone.trim() || undefined,
-          hostelId: hostelId || undefined
+          hostelIds: selectedHostelIds
         }
       });
       if (res.success) {
@@ -139,7 +149,7 @@ export const StaffRecordsPage: React.FC = () => {
         setFullName('');
         setEmail('');
         setPhone('');
-        setHostelId('');
+        setSelectedHostelIds([]);
         await fetchStaff();
         setTimeout(() => setSuccessMsg(''), 4000);
       }
@@ -170,10 +180,11 @@ export const StaffRecordsPage: React.FC = () => {
   const handleOpenEditStaff = (member: StaffMember) => {
     setEditingStaff(member);
     setEditFullName(member.full_name || '');
-    setEditRole(member.role || 'mess_staff');
+    setEditRole(member.role || 'junior_assistant');
     setEditEmail(member.email || '');
     setEditPhone(member.phone || '');
-    setEditHostelId(member.hostel_id || '');
+    const currentIds = member.hostel_ids || (member.assigned_hostels ? member.assigned_hostels.map((h) => h.id) : (member.hostel_id ? [member.hostel_id] : []));
+    setEditSelectedHostelIds(currentIds);
     setEditIsActive(member.is_active ?? true);
     setEditError('');
     setShowEditModal(true);
@@ -192,7 +203,7 @@ export const StaffRecordsPage: React.FC = () => {
           role: editRole,
           email: editEmail.trim(),
           phone: editPhone.trim(),
-          hostelId: editHostelId || null,
+          hostelIds: editSelectedHostelIds,
           isActive: editIsActive
         }
       });
@@ -344,8 +355,7 @@ export const StaffRecordsPage: React.FC = () => {
               <TableRow>
                 <TableHead>Staff Member</TableHead>
                 <TableHead>Assigned Role</TableHead>
-                <TableHead>System Access Status</TableHead>
-                <TableHead>Hostel / Campus Assignment</TableHead>
+                <TableHead>Assigned Hostels</TableHead>
                 <TableHead>Contact Phone</TableHead>
                 <TableHead align="right">Actions</TableHead>
               </TableRow>
@@ -384,21 +394,30 @@ export const StaffRecordsPage: React.FC = () => {
                     </TableCell>
 
                     <TableCell>
-                      <Badge
-                        variant={member.isRecordOnly ? 'warning' : 'success'}
-                      >
-                        {member.isRecordOnly ? 'Record Only (No Login)' : 'Active Login Access'}
-                      </Badge>
-                    </TableCell>
-
-                    <TableCell>
-                      {member.hostel_name ? (
+                      {member.assigned_hostels && member.assigned_hostels.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5 max-w-sm">
+                          {member.assigned_hostels.map((h) => (
+                            <span
+                              key={h.id}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border shadow-2xs ${
+                                h.category === 'girls'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}
+                            >
+                              <Building className="w-3 h-3 flex-shrink-0 text-slate-400" />
+                              <span>{h.name}</span>
+                              <span className="opacity-75 font-mono text-[9px]">({h.code})</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : member.hostel_name ? (
                         <div className="flex items-center space-x-1.5 font-medium text-slate-600">
                           <Building className="w-3.5 h-3.5 text-slate-400" />
                           <span>{member.hostel_name} ({member.hostel_code})</span>
                         </div>
                       ) : (
-                        <span className="text-slate-400 italic">Central / Campus-wide</span>
+                        <span className="text-slate-400 italic text-xs">Campus-wide / None</span>
                       )}
                     </TableCell>
 
@@ -490,21 +509,6 @@ export const StaffRecordsPage: React.FC = () => {
               ]}
             />
 
-            <Select
-              label="Hostel Assignment"
-              value={hostelId}
-              onChange={(e) => setHostelId(e.target.value)}
-              options={[
-                { value: '', label: 'Campus-wide / None' },
-                ...hostels.map((h) => ({
-                  value: h.id,
-                  label: `${h.name} (${h.code})`
-                }))
-              ]}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input
               label="Contact Phone"
               type="tel"
@@ -512,14 +516,101 @@ export const StaffRecordsPage: React.FC = () => {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
+          </div>
 
+          <div>
             <Input
-              label="University Email (Optional)"
+              label="Email Address (Gmail / University Email)"
               type="email"
-              placeholder="Auto-generated if empty"
+              placeholder="e.g. warden@gmail.com or staff@aknu.edu.in"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Supports personal Gmail accounts (e.g. name@gmail.com) or official AKNU email addresses.
+            </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                Assign Hostels ({selectedHostelIds.length} selected)
+              </label>
+              {hostels.length > 0 && (
+                <div className="flex items-center space-x-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHostelIds(hostels.map((h) => h.id))}
+                    className="text-[#23395D] hover:underline font-semibold"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedHostelIds([])}
+                    className="text-slate-500 hover:underline"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {hostels.length === 0 ? (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-500 italic">
+                No hostels registered yet. You can add hostels in Hostels & Rooms first.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 bg-[#FCFAF7] border border-[#DED8CF] rounded-md">
+                {hostels.map((h) => {
+                  const isSelected = selectedHostelIds.includes(h.id);
+                  return (
+                    <label
+                      key={h.id}
+                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
+                        isSelected
+                          ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
+                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedHostelIds((prev) => [...prev, h.id]);
+                          } else {
+                            setSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
+                          }
+                        }}
+                        className="mt-0.5 rounded text-[#23395D] focus:ring-[#23395D] border-slate-300"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate leading-tight">{h.name}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono text-[10px] text-slate-500 font-semibold">{h.code}</span>
+                          {h.category && (
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                                h.category === 'girls'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {h.category === 'girls' ? "Girls Wing" : "Boys Wing"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500 mt-1">
+              Select one or more hostels. Staff can be assigned to multiple hostels across wings or campuses.
+            </p>
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
@@ -581,15 +672,12 @@ export const StaffRecordsPage: React.FC = () => {
             />
 
             <Select
-              label="Assigned Hostel / Wing"
-              value={editHostelId}
-              onChange={(e) => setEditHostelId(e.target.value)}
+              label="Account Status"
+              value={editIsActive ? 'true' : 'false'}
+              onChange={(e) => setEditIsActive(e.target.value === 'true')}
               options={[
-                { value: '', label: 'None / Campus-Wide' },
-                ...hostels.map((h) => ({
-                  value: h.id,
-                  label: `${h.name} (${h.code})`
-                }))
+                { value: 'true', label: 'Active Personnel' },
+                { value: 'false', label: 'Deactivated / Relieved' }
               ]}
             />
           </div>
@@ -603,24 +691,94 @@ export const StaffRecordsPage: React.FC = () => {
             />
 
             <Input
-              label="University Email"
+              label="Email Address (Gmail / University Email)"
               type="email"
-              placeholder="staff@aknu.edu.in"
+              placeholder="e.g. warden@gmail.com or staff@aknu.edu.in"
               value={editEmail}
               onChange={(e) => setEditEmail(e.target.value)}
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Select
-              label="Account Status"
-              value={editIsActive ? 'true' : 'false'}
-              onChange={(e) => setEditIsActive(e.target.value === 'true')}
-              options={[
-                { value: 'true', label: 'Active Personnel' },
-                { value: 'false', label: 'Deactivated / Relieved' }
-              ]}
-            />
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                Assigned Hostels ({editSelectedHostelIds.length} selected)
+              </label>
+              {hostels.length > 0 && (
+                <div className="flex items-center space-x-2 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setEditSelectedHostelIds(hostels.map((h) => h.id))}
+                    className="text-[#23395D] hover:underline font-semibold"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-300">•</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditSelectedHostelIds([])}
+                    className="text-slate-500 hover:underline"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {hostels.length === 0 ? (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-xs text-slate-500 italic">
+                No hostels registered yet. Add hostels in Hostels & Rooms first.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2.5 bg-[#FCFAF7] border border-[#DED8CF] rounded-md">
+                {hostels.map((h) => {
+                  const isSelected = editSelectedHostelIds.includes(h.id);
+                  return (
+                    <label
+                      key={h.id}
+                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
+                        isSelected
+                          ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
+                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditSelectedHostelIds((prev) => [...prev, h.id]);
+                          } else {
+                            setEditSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
+                          }
+                        }}
+                        className="mt-0.5 rounded text-[#23395D] focus:ring-[#23395D] border-slate-300"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold truncate leading-tight">{h.name}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono text-[10px] text-slate-500 font-semibold">{h.code}</span>
+                          {h.category && (
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
+                                h.category === 'girls'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}
+                            >
+                              {h.category === 'girls' ? "Girls Wing" : "Boys Wing"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500 mt-1">
+              Select one or more hostels. Staff can be assigned to multiple hostels across wings or campuses.
+            </p>
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">

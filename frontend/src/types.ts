@@ -30,6 +30,8 @@ export interface StudentProfile {
   department_name?: string;
   course_id?: string;
   course_name?: string;
+  course_duration?: number;
+  program_level?: 'UG' | 'PG' | 'PhD';
   year_of_study?: number;
   current_semester?: number;
   phone: string;

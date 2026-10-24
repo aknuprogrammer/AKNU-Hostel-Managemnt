@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { apiRequest } from '../services/api.js';
 import { Hostel } from '../types.js';
 import {
@@ -25,8 +25,15 @@ import {
   Badge
 } from '../components/ui/index.js';
 import { useConfirm } from '../context/ConfirmContext.js';
+import { useAuth } from '../context/AuthContext.js';
 
 export const HostelsPage: React.FC = () => {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const userWing = (!isSuperAdmin && user?.assignedCategory && user.assignedCategory !== 'all') ? user.assignedCategory : null;
+  const initialBatchGender = userWing === 'girls' ? 'female' : 'male';
+  const initialCategory: 'boys' | 'girls' = (userWing as 'boys' | 'girls') || 'boys';
+
   const { confirm, showSuccess, showError, showWarning } = useConfirm();
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [selectedHostel, setSelectedHostel] = useState<string>('');
@@ -35,20 +42,31 @@ export const HostelsPage: React.FC = () => {
 
   // Smart Batch Allocation modal state
   const [showBatchModal, setShowBatchModal] = useState(false);
-  const [batchGender, setBatchGender] = useState<'male' | 'female'>('male');
+  const [batchGender, setBatchGender] = useState<'male' | 'female'>(initialBatchGender);
   const [batchCourse, setBatchCourse] = useState<string>('all');
   const [batchDepartment, setBatchDepartment] = useState<string>('all');
   const [batchYear, setBatchYear] = useState<string>('all');
   const [batchSearch, setBatchSearch] = useState<string>('');
   const [batchTargetHostel, setBatchTargetHostel] = useState<string>('');
   const [batchTargetFloor, setBatchTargetFloor] = useState<string>('all');
+  const [batchTargetRoom, setBatchTargetRoom] = useState<string>('all');
+  const [targetHostelRooms, setTargetHostelRooms] = useState<any[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [allocatingBatch, setAllocatingBatch] = useState(false);
   const [batchResult, setBatchResult] = useState<any | null>(null);
-  const [academicDepts, setAcademicDepts] = useState<any[]>([]);
-  const [academicCourses, setAcademicCourses] = useState<any[]>([]);
+  const [availableFilters, setAvailableFilters] = useState<{
+    totalUnallocated: number;
+    departments: { id: string; name: string; code: string; count: number }[];
+    courses: { id: string; name: string; code: string; count: number }[];
+    years: { year: number; label: string; count: number }[];
+  }>({
+    totalUnallocated: 0,
+    departments: [],
+    courses: [],
+    years: []
+  });
 
   // Create Hostel modal
   const [showCreateHostelModal, setShowCreateHostelModal] = useState(false);
@@ -57,8 +75,6 @@ export const HostelsPage: React.FC = () => {
     code: string;
     category: 'boys' | 'girls';
     campus: string;
-    chiefWardenId: string;
-    wardenId: string;
     autoGenRooms: boolean;
     numFloors: number | string;
     roomsPerFloor: number | string;
@@ -66,10 +82,8 @@ export const HostelsPage: React.FC = () => {
   }>({
     name: '',
     code: '',
-    category: 'boys',
+    category: initialCategory,
     campus: 'Main Campus, Rajahmundry',
-    chiefWardenId: 'usr-chief',
-    wardenId: 'usr-warden-bh',
     autoGenRooms: true,
     numFloors: 2,
     roomsPerFloor: 5,
@@ -82,10 +96,8 @@ export const HostelsPage: React.FC = () => {
   const [editHostelForm, setEditHostelForm] = useState({
     name: '',
     code: '',
-    category: 'boys' as 'boys' | 'girls',
-    campus: 'Main Campus, Rajahmundry',
-    chiefWardenId: 'usr-chief',
-    wardenId: 'usr-warden-bh'
+    category: initialCategory,
+    campus: 'Main Campus, Rajahmundry'
   });
 
   // Add Room modal
@@ -130,20 +142,7 @@ export const HostelsPage: React.FC = () => {
 
   useEffect(() => {
     fetchHostels();
-    fetchAcademicStructure();
   }, []);
-
-  const fetchAcademicStructure = async () => {
-    try {
-      const res = await apiRequest<{ success: boolean; data: { departments: any[]; courses: any[] } }>('/students/meta/academic-structure');
-      if (res.success && res.data) {
-        if (res.data.departments) setAcademicDepts(res.data.departments);
-        if (res.data.courses) setAcademicCourses(res.data.courses);
-      }
-    } catch (e) {
-      console.warn('Academic structure fetch warning:', e);
-    }
-  };
 
   useEffect(() => {
     if (showBatchModal) {
@@ -160,6 +159,70 @@ export const HostelsPage: React.FC = () => {
     }
   }, [batchGender, hostels]);
 
+  useEffect(() => {
+    if (batchTargetHostel) {
+      fetchTargetHostelRooms(batchTargetHostel);
+      setBatchTargetFloor('all');
+      setBatchTargetRoom('all');
+    } else {
+      setTargetHostelRooms([]);
+    }
+  }, [batchTargetHostel]);
+
+  const fetchTargetHostelRooms = async (hostelId: string) => {
+    try {
+      const res = await apiRequest<{ success: boolean; data: any[] }>(`/hostels/rooms?hostelId=${hostelId}`);
+      if (res.success && res.data) {
+        setTargetHostelRooms(res.data);
+      }
+    } catch (e) {
+      console.warn('Target hostel rooms fetch warning:', e);
+    }
+  };
+
+  const targetFloors = useMemo(() => {
+    const map = new Map<string, { id: string; floorNumber: number | string; name: string; vacantBeds: number }>();
+    targetHostelRooms.forEach((r) => {
+      const flKey = String(r.floor_number ?? '1');
+      const isVacant = r.bed_status === 'vacant';
+      const existing = map.get(flKey);
+      if (existing) {
+        if (isVacant) existing.vacantBeds++;
+      } else {
+        map.set(flKey, {
+          id: r.floor_id || r.floor_table_id || flKey,
+          floorNumber: r.floor_number ?? 1,
+          name: r.floor_name || `Floor ${r.floor_number ?? 1}`,
+          vacantBeds: isVacant ? 1 : 0
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => Number(a.floorNumber) - Number(b.floorNumber));
+  }, [targetHostelRooms]);
+
+  const targetRooms = useMemo(() => {
+    const map = new Map<string, { id: string; roomNumber: string; floorNumber: number | string; vacantBeds: number; capacity: number }>();
+    targetHostelRooms.forEach((r) => {
+      if (batchTargetFloor !== 'all' && String(r.floor_number) !== String(batchTargetFloor) && r.floor_id !== batchTargetFloor) {
+        return;
+      }
+      const isVacant = r.bed_status === 'vacant';
+      const existing = map.get(r.room_id);
+      if (existing) {
+        if (isVacant) existing.vacantBeds++;
+      } else {
+        map.set(r.room_id, {
+          id: r.room_id,
+          roomNumber: r.room_number,
+          floorNumber: r.floor_number ?? 1,
+          vacantBeds: isVacant ? 1 : 0,
+          capacity: r.capacity || 2
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true }));
+  }, [targetHostelRooms, batchTargetFloor]);
+
   const fetchCandidates = async () => {
     try {
       setLoadingCandidates(true);
@@ -170,10 +233,34 @@ export const HostelsPage: React.FC = () => {
       if (batchYear !== 'all') params.append('yearOfStudy', batchYear);
       if (batchSearch) params.append('search', batchSearch);
 
-      const res = await apiRequest<{ success: boolean; data: any[] }>(`/hostels/batch/unallocated-candidates?${params.toString()}`);
+      const res = await apiRequest<{
+        success: boolean;
+        data: any[];
+        availableFilters?: {
+          totalUnallocated: number;
+          departments: any[];
+          courses: any[];
+          years: any[];
+        };
+      }>(`/hostels/batch/unallocated-candidates?${params.toString()}`);
+
       if (res.success) {
         setCandidates(res.data);
         setSelectedStudentIds(res.data.map((s) => s.id));
+        if (res.availableFilters) {
+          setAvailableFilters(res.availableFilters);
+
+          // Auto-reset selected filter if it no longer exists among unallocated candidates
+          if (batchDepartment !== 'all' && !res.availableFilters.departments.some((d) => d.id === batchDepartment)) {
+            setBatchDepartment('all');
+          }
+          if (batchCourse !== 'all' && !res.availableFilters.courses.some((c) => c.id === batchCourse)) {
+            setBatchCourse('all');
+          }
+          if (batchYear !== 'all' && !res.availableFilters.years.some((y) => String(y.year) === String(batchYear))) {
+            setBatchYear('all');
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -235,9 +322,7 @@ export const HostelsPage: React.FC = () => {
         name: newHostel.name.trim(),
         code: newHostel.code.trim().toUpperCase(),
         category: newHostel.category,
-        campus: newHostel.campus.trim(),
-        chiefWardenId: newHostel.chiefWardenId,
-        wardenId: newHostel.wardenId
+        campus: newHostel.campus.trim()
       };
 
       if (newHostel.autoGenRooms) {
@@ -260,10 +345,8 @@ export const HostelsPage: React.FC = () => {
         setNewHostel({
           name: '',
           code: '',
-          category: 'boys',
+          category: initialCategory,
           campus: 'Main Campus, Rajahmundry',
-          chiefWardenId: 'usr-chief',
-          wardenId: 'usr-warden-bh',
           autoGenRooms: true,
           numFloors: 2,
           roomsPerFloor: 5,
@@ -285,9 +368,7 @@ export const HostelsPage: React.FC = () => {
       name: h.name,
       code: h.code,
       category: (h.category as 'boys' | 'girls') || 'boys',
-      campus: h.campus || 'Main Campus, Rajahmundry',
-      chiefWardenId: h.chief_warden_id || (h.category === 'girls' ? 'usr-chief-gh' : 'usr-chief'),
-      wardenId: h.category === 'girls' ? 'usr-warden-gh' : 'usr-warden-bh'
+      campus: h.campus || 'Main Campus, Rajahmundry'
     });
     setShowEditHostelModal(true);
   };
@@ -405,6 +486,7 @@ export const HostelsPage: React.FC = () => {
         body: {
           targetHostelId: batchTargetHostel,
           targetFloorId: batchTargetFloor === 'all' ? null : batchTargetFloor,
+          targetRoomId: batchTargetRoom === 'all' ? null : batchTargetRoom,
           studentIds: selectedStudentIds
         }
       });
@@ -587,53 +669,75 @@ export const HostelsPage: React.FC = () => {
   return (
     <div className="space-y-3">
       {/* Top Header */}
-      <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">Hostels & Room Allocation Matrix</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Hierarchy: University → Hostel Category → Building → Block → Floor → Room → Bed Inventory.
-          </p>
+      <div className="bg-white rounded-lg p-5 border border-slate-200 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-[#23395D]/10 flex items-center justify-center text-[#23395D] flex-shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">Hostels & Room Allocation Matrix</h1>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Hierarchy: University → Hostel Category → Building → Block → Floor → Room → Bed Inventory
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => {
-              setBatchResult(null);
-              setShowBatchModal(true);
-            }}
-            leftIcon={<Sparkles className="w-4 h-4 text-amber-300" />}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-          >
-            Smart Batch Allocation
-          </Button>
+        {/* Action Toolbar */}
+        <div className="flex flex-wrap items-center gap-2.5 xl:justify-end">
+          {/* Allocation Actions Segment */}
+          <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-lg border border-slate-200">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setBatchResult(null);
+                setShowBatchModal(true);
+              }}
+              leftIcon={<Sparkles className="w-3.5 h-3.5 text-indigo-600" />}
+              className="text-xs font-semibold text-slate-700 hover:text-indigo-700 hover:bg-white hover:shadow-2xs whitespace-nowrap transition rounded-md"
+            >
+              Smart Allocation
+            </Button>
 
-          <Button
-            onClick={() => setShowCreateHostelModal(true)}
-            leftIcon={<Plus className="w-4 h-4" />}
-            variant="accent"
-          >
-            Add New Hostel
-          </Button>
-
-          {hostels.length > 0 && (
-            <>
+            {hostels.length > 0 && (
               <Button
-                onClick={() => setShowAddRoomModal(true)}
-                leftIcon={<DoorClosed className="w-4 h-4" />}
-                variant="secondary"
-              >
-                Add Room
-              </Button>
-
-              <Button
+                size="sm"
+                variant="ghost"
                 onClick={() => setShowTransferModal(true)}
-                leftIcon={<ArrowRightLeft className="w-4 h-4" />}
-                variant="primary"
+                leftIcon={<ArrowRightLeft className="w-3.5 h-3.5 text-slate-600" />}
+                className="text-xs font-semibold text-slate-700 hover:text-slate-900 hover:bg-white hover:shadow-2xs whitespace-nowrap transition rounded-md"
               >
                 Room Transfer
               </Button>
-            </>
-          )}
+            )}
+          </div>
+
+          {/* Infrastructure Setup Actions */}
+          <div className="inline-flex items-center gap-2">
+            {hostels.length > 0 && (
+              <Button
+                size="sm"
+                onClick={() => setShowAddRoomModal(true)}
+                leftIcon={<DoorClosed className="w-3.5 h-3.5" />}
+                variant="outline"
+                className="text-xs font-semibold whitespace-nowrap border-slate-300 hover:border-slate-400 bg-white hover:bg-slate-50 shadow-2xs"
+              >
+                Add Room
+              </Button>
+            )}
+
+            <Button
+              size="sm"
+              onClick={() => setShowCreateHostelModal(true)}
+              leftIcon={<Plus className="w-3.5 h-3.5" />}
+              variant="primary"
+              className="text-xs font-bold whitespace-nowrap bg-[#23395D] hover:bg-[#192B47] text-white shadow-sm"
+            >
+              Add New Hostel
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -879,9 +983,7 @@ export const HostelsPage: React.FC = () => {
                   ...prev,
                   name,
                   code: prev.code || autoCode,
-                  category: isGirls ? 'girls' : prev.category,
-                  chiefWardenId: isGirls ? 'usr-chief-gh' : prev.chiefWardenId,
-                  wardenId: isGirls ? 'usr-warden-gh' : prev.wardenId
+                  category: isGirls ? 'girls' : prev.category
                 }));
               }}
             />
@@ -898,18 +1000,25 @@ export const HostelsPage: React.FC = () => {
             <Select
               label="Wing / Category"
               value={newHostel.category}
+              disabled={!!userWing}
               onChange={(e) => {
                 const cat = e.target.value as 'boys' | 'girls';
                 setNewHostel({
                   ...newHostel,
-                  category: cat,
-                  chiefWardenId: cat === 'girls' ? 'usr-chief-gh' : 'usr-chief',
-                  wardenId: cat === 'girls' ? 'usr-warden-gh' : 'usr-warden-bh'
+                  category: cat
                 });
               }}
             >
-              <option value="boys">Boys Wing (Male Students)</option>
-              <option value="girls">Girls Wing (Female Students)</option>
+              {userWing === 'boys' ? (
+                <option value="boys">Boys Wing (Male Students)</option>
+              ) : userWing === 'girls' ? (
+                <option value="girls">Girls Wing (Female Students)</option>
+              ) : (
+                <>
+                  <option value="boys">Boys Wing (Male Students)</option>
+                  <option value="girls">Girls Wing (Female Students)</option>
+                </>
+              )}
             </Select>
 
             <Input
@@ -919,25 +1028,6 @@ export const HostelsPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Chief Warden in Charge"
-              value={newHostel.chiefWardenId}
-              onChange={(e) => setNewHostel({ ...newHostel, chiefWardenId: e.target.value })}
-            >
-              <option value="usr-chief">Prof. M. Ramana (Chief Warden Boys)</option>
-              <option value="usr-chief-gh">Prof. K. Vijaya (Chief Warden Girls)</option>
-            </Select>
-
-            <Select
-              label="Hostel Warden"
-              value={newHostel.wardenId}
-              onChange={(e) => setNewHostel({ ...newHostel, wardenId: e.target.value })}
-            >
-              <option value="usr-warden-bh">Dr. P. Satyanarayana (Hostel Warden Boys)</option>
-              <option value="usr-warden-gh">Dr. S. Lakshmi (Hostel Warden Girls)</option>
-            </Select>
-          </div>
 
           {/* Room Generation Configuration */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-md p-3.5 space-y-3">
@@ -1088,18 +1178,25 @@ export const HostelsPage: React.FC = () => {
             <Select
               label="Wing / Category"
               value={editHostelForm.category}
+              disabled={!!userWing}
               onChange={(e) => {
                 const cat = e.target.value as 'boys' | 'girls';
                 setEditHostelForm({
                   ...editHostelForm,
-                  category: cat,
-                  chiefWardenId: cat === 'girls' ? 'usr-chief-gh' : 'usr-chief',
-                  wardenId: cat === 'girls' ? 'usr-warden-gh' : 'usr-warden-bh'
+                  category: cat
                 });
               }}
             >
-              <option value="boys">Boys Wing (Male Students)</option>
-              <option value="girls">Girls Wing (Female Students)</option>
+              {userWing === 'boys' ? (
+                <option value="boys">Boys Wing (Male Students)</option>
+              ) : userWing === 'girls' ? (
+                <option value="girls">Girls Wing (Female Students)</option>
+              ) : (
+                <>
+                  <option value="boys">Boys Wing (Male Students)</option>
+                  <option value="girls">Girls Wing (Female Students)</option>
+                </>
+              )}
             </Select>
 
             <Input
@@ -1109,25 +1206,6 @@ export const HostelsPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Chief Warden in Charge"
-              value={editHostelForm.chiefWardenId}
-              onChange={(e) => setEditHostelForm({ ...editHostelForm, chiefWardenId: e.target.value })}
-            >
-              <option value="usr-chief">Prof. M. Ramana (Chief Warden Boys)</option>
-              <option value="usr-chief-gh">Prof. K. Vijaya (Chief Warden Girls)</option>
-            </Select>
-
-            <Select
-              label="Hostel Warden"
-              value={editHostelForm.wardenId}
-              onChange={(e) => setEditHostelForm({ ...editHostelForm, wardenId: e.target.value })}
-            >
-              <option value="usr-warden-bh">Dr. P. Satyanarayana (Hostel Warden Boys)</option>
-              <option value="usr-warden-gh">Dr. S. Lakshmi (Hostel Warden Girls)</option>
-            </Select>
-          </div>
 
           <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
             <Button
@@ -1412,84 +1490,124 @@ export const HostelsPage: React.FC = () => {
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
                   <Filter className="w-3.5 h-3.5" /> 1. Select Student Cohort Filters
                 </span>
-                {/* Gender Toggle */}
-                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm text-xs">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBatchGender('male');
-                      setSelectedStudentIds([]);
-                    }}
-                    className={`px-3 py-1 font-semibold rounded-md transition ${
-                      batchGender === 'male'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Boys Wing (Male)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBatchGender('female');
-                      setSelectedStudentIds([]);
-                    }}
-                    className={`px-3 py-1 font-semibold rounded-md transition ${
-                      batchGender === 'female'
-                        ? 'bg-rose-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Girls Wing (Female)
-                  </button>
-                </div>
+                {/* Gender Toggle: Only for Super Admin */}
+                {!userWing ? (
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchGender('male');
+                        setBatchDepartment('all');
+                        setBatchCourse('all');
+                        setBatchYear('all');
+                        setSelectedStudentIds([]);
+                      }}
+                      className={`px-3 py-1 font-semibold rounded-md transition ${
+                        batchGender === 'male'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Boys Wing (Male)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchGender('female');
+                        setBatchDepartment('all');
+                        setBatchCourse('all');
+                        setBatchYear('all');
+                        setSelectedStudentIds([]);
+                      }}
+                      className={`px-3 py-1 font-semibold rounded-md transition ${
+                        batchGender === 'female'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Girls Wing (Female)
+                    </button>
+                  </div>
+                ) : (
+                  <Badge variant={userWing === 'boys' ? 'primary' : 'neutral'}>
+                    {userWing === 'boys' ? "Boys Wing Residents Only" : "Girls Wing Residents Only"}
+                  </Badge>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Department</label>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Department {availableFilters.departments.length > 0 && `(${availableFilters.departments.length})`}
+                  </label>
                   <select
                     value={batchDepartment}
                     onChange={(e) => setBatchDepartment(e.target.value)}
-                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none"
+                    disabled={availableFilters.departments.length === 0}
+                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    <option value="all">All Departments</option>
-                    {academicDepts.map((d: any) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} ({d.code})
-                      </option>
-                    ))}
+                    {availableFilters.departments.length === 0 ? (
+                      <option value="all">No Departments (0)</option>
+                    ) : (
+                      <>
+                        <option value="all">All Departments ({availableFilters.totalUnallocated})</option>
+                        {availableFilters.departments.map((d: any) => (
+                          <option key={d.id} value={d.id}>
+                            {d.name} ({d.code}) ({d.count})
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Course / Degree</label>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Course / Degree {availableFilters.courses.length > 0 && `(${availableFilters.courses.length})`}
+                  </label>
                   <select
                     value={batchCourse}
                     onChange={(e) => setBatchCourse(e.target.value)}
-                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none"
+                    disabled={availableFilters.courses.length === 0}
+                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    <option value="all">All Courses</option>
-                    {academicCourses.map((c: any) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code})
-                      </option>
-                    ))}
+                    {availableFilters.courses.length === 0 ? (
+                      <option value="all">No Courses (0)</option>
+                    ) : (
+                      <>
+                        <option value="all">All Courses ({availableFilters.totalUnallocated})</option>
+                        {availableFilters.courses.map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.code}) ({c.count})
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">Year of Study</label>
+                  <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                    Year of Study {availableFilters.years.length > 0 && `(${availableFilters.years.length})`}
+                  </label>
                   <select
                     value={batchYear}
                     onChange={(e) => setBatchYear(e.target.value)}
-                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none"
+                    disabled={availableFilters.years.length === 0}
+                    className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
                   >
-                    <option value="all">All Years</option>
-                    <option value="1">1st Year</option>
-                    <option value="2">2nd Year</option>
-                    <option value="3">3rd Year</option>
-                    <option value="4">4th Year</option>
+                    {availableFilters.years.length === 0 ? (
+                      <option value="all">No Years (0)</option>
+                    ) : (
+                      <>
+                        <option value="all">All Years ({availableFilters.totalUnallocated})</option>
+                        {availableFilters.years.map((y: any) => (
+                          <option key={y.year} value={String(y.year)}>
+                            {y.label} ({y.count})
+                          </option>
+                        ))}
+                      </>
+                    )}
                   </select>
                 </div>
 
@@ -1509,23 +1627,36 @@ export const HostelsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Target Destination Hostel Selection */}
+            {/* Target Destination Hostel, Floor & Room Selection */}
             {(() => {
               const matchingHostels = hostels.filter((h) =>
                 batchGender === 'male' ? h.category === 'boys' : h.category === 'girls'
               );
               const targetH = matchingHostels.find((h) => h.id === batchTargetHostel) || matchingHostels[0];
-              const vacantBedsInTarget = targetH
-                ? Math.max(0, (targetH.total_beds || targetH.total_capacity || 0) - (targetH.occupied_beds || 0))
-                : 0;
+
+              let vacantBedsInTarget = 0;
+              if (batchTargetRoom !== 'all') {
+                const rm = targetRooms.find((r) => r.id === batchTargetRoom);
+                vacantBedsInTarget = rm ? rm.vacantBeds : 0;
+              } else if (batchTargetFloor !== 'all') {
+                const fl = targetFloors.find((f) => String(f.floorNumber) === String(batchTargetFloor) || f.id === batchTargetFloor);
+                vacantBedsInTarget = fl ? fl.vacantBeds : 0;
+              } else if (targetH) {
+                vacantBedsInTarget = Math.max(0, (targetH.total_beds || targetH.total_capacity || 0) - (targetH.occupied_beds || 0));
+              }
 
               return (
                 <div className="bg-indigo-50/60 p-3.5 rounded-lg border border-indigo-200 space-y-2.5">
-                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-indigo-600" /> 2. Target Destination Hostel & Capacity
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-600" /> 2. Target Destination Hostel, Floor & Room
+                    </span>
+                    <span className="text-[11px] text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded font-medium">
+                      Control allocation scope precisely by Hostel, Floor, or specific Room
+                    </span>
+                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     <div>
                       <label className="text-[11px] font-semibold text-indigo-900 block mb-1">
                         Destination Hostel ({batchGender === 'male' ? 'Boys Wing' : 'Girls Wing'}) *
@@ -1539,42 +1670,87 @@ export const HostelsPage: React.FC = () => {
                           const vac = Math.max(0, (h.total_beds || h.total_capacity || 0) - (h.occupied_beds || 0));
                           return (
                             <option key={h.id} value={h.id}>
-                              {h.name} ({h.code}) — {vac} vacant beds available
+                              {h.name} ({h.code}) — {vac} vacant
                             </option>
                           );
                         })}
                       </select>
                     </div>
 
-                    <div className="flex flex-col gap-1 sm:pt-4">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 font-medium">Vacant Beds Available:</span>
-                        <span className="font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                          {vacantBedsInTarget} beds
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 font-medium">Selected Students to Allocate:</span>
-                        <span className={`font-extrabold px-2 py-0.5 rounded ${
-                          selectedStudentIds.length <= vacantBedsInTarget
-                            ? 'text-indigo-700 bg-indigo-100'
-                            : 'text-amber-800 bg-amber-100'
-                        }`}>
-                          {selectedStudentIds.length} students
-                        </span>
-                      </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-indigo-900 block mb-1">
+                        Target Floor (Optional)
+                      </label>
+                      <select
+                        value={batchTargetFloor}
+                        onChange={(e) => {
+                          setBatchTargetFloor(e.target.value);
+                          setBatchTargetRoom('all');
+                        }}
+                        className="w-full text-xs rounded-md border border-indigo-300 bg-white p-2 focus:border-indigo-600 focus:outline-none font-semibold text-slate-800"
+                      >
+                        <option value="all">All Floors (Entire Hostel)</option>
+                        {targetFloors.map((fl) => (
+                          <option key={fl.id} value={String(fl.floorNumber)}>
+                            {fl.name} ({fl.vacantBeds} vacant beds)
+                          </option>
+                        ))}
+                      </select>
                     </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-indigo-900 block mb-1">
+                        Target Room (Optional)
+                      </label>
+                      <select
+                        value={batchTargetRoom}
+                        onChange={(e) => setBatchTargetRoom(e.target.value)}
+                        className="w-full text-xs rounded-md border border-indigo-300 bg-white p-2 focus:border-indigo-600 focus:outline-none font-semibold text-slate-800"
+                      >
+                        <option value="all">All Rooms (Fill Sequentially)</option>
+                        {targetRooms.map((rm) => (
+                          <option key={rm.id} value={rm.id}>
+                            Room {rm.roomNumber} ({rm.vacantBeds} vacant / {rm.capacity} beds)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between pt-1 border-t border-indigo-100 text-xs gap-2">
+                    <div className="flex items-center space-x-4">
+                      <span className="text-slate-600">
+                        Available in Selection: <strong className="text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-extrabold">{vacantBedsInTarget} beds</strong>
+                      </span>
+                      <span className="text-slate-600">
+                        Selected Students: <strong className={`px-1.5 py-0.5 rounded font-extrabold ${selectedStudentIds.length <= vacantBedsInTarget ? 'text-indigo-700 bg-indigo-100' : 'text-amber-800 bg-amber-100'}`}>{selectedStudentIds.length} students</strong>
+                      </span>
+                    </div>
+
+                    {batchTargetRoom !== 'all' ? (
+                      <span className="text-[11px] font-medium text-indigo-700 italic">
+                        🎯 Targeted exclusively to Room {targetRooms.find(r => r.id === batchTargetRoom)?.roomNumber}
+                      </span>
+                    ) : batchTargetFloor !== 'all' ? (
+                      <span className="text-[11px] font-medium text-indigo-700 italic">
+                        🏢 Restricted to Floor {batchTargetFloor} vacant rooms
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-500 italic">
+                        ⚡ Auto-fills lowest floor & lowest room numbers first
+                      </span>
+                    )}
                   </div>
 
                   {selectedStudentIds.length > vacantBedsInTarget && vacantBedsInTarget > 0 && (
                     <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded">
-                      ⚠️ Warning: You selected {selectedStudentIds.length} students, but only {vacantBedsInTarget} beds are vacant in this hostel. The first {vacantBedsInTarget} students will be allocated sequentially, and the rest will remain unallocated.
+                      ⚠️ Warning: You selected {selectedStudentIds.length} students, but only {vacantBedsInTarget} vacant beds are available in this scope. The first {vacantBedsInTarget} students will be allocated sequentially, and the rest will remain unallocated.
                     </div>
                   )}
 
                   {vacantBedsInTarget === 0 && (
                     <div className="text-[11px] text-red-800 bg-red-50 border border-red-200 p-2 rounded">
-                      ⛔ No vacant beds available in the selected hostel. Please choose another hostel or vacate existing beds first.
+                      ⛔ No vacant beds available in the selected {batchTargetRoom !== 'all' ? 'room' : batchTargetFloor !== 'all' ? 'floor' : 'hostel'}. Please adjust your selection or vacate beds first.
                     </div>
                   )}
                 </div>

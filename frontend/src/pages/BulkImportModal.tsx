@@ -22,41 +22,123 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
   const handleDownloadSample = () => {
     const sampleData = [
       {
+        'Program Level': 'UG',
+        'Degree': 'B.Tech',
+        'Branch': 'Civil Engineering',
+        'Year': '1',
+        'Semester': '1',
+        'Roll Number': '24CIVIL001',
+        'Registration Number': 'AKNU/2026/BH1/BTECH/CIVIL/0001',
+        'Full Name': 'P. Ravi Kumar',
+        'Email': 'ravikumar@aknu.edu.in',
+        'Phone': '9848011221',
+        'Gender': 'male',
+        'Permanent Address': 'D.No 2-44, Main Road, Kakinada, AP 533001',
+        'Guardian Name': 'P. Venkat Rao',
+        'Guardian Phone': '9848011222'
+      },
+      {
+        'Program Level': 'UG',
+        'Degree': 'B.Tech',
+        'Branch': 'Computer Science & Engineering',
+        'Year': '3',
+        'Semester': '5',
         'Roll Number': '22CSE099',
         'Registration Number': 'AKNU/2026/BH1/BTECH/CSE/0001',
         'Full Name': 'K. Sai Teja',
         'Email': 'saiteja@aknu.edu.in',
         'Phone': '9848099889',
         'Gender': 'male',
-        'Course': 'B.Tech',
-        'Department': 'Computer Science & Engineering',
-        'Year': '3',
-        'Semester': '5',
         'Permanent Address': 'D.No 4-12, Main Road, Rajamahendravaram, AP 533101',
         'Guardian Name': 'K. Srinivas',
         'Guardian Phone': '9848011223'
       },
       {
-        'Roll Number': '22ECE050',
+        'Program Level': 'UG',
+        'Degree': 'B.Tech',
+        'Branch': 'Electronics & Communication Engineering',
+        'Year': '2',
+        'Semester': '3',
+        'Roll Number': '23ECE050',
         'Registration Number': 'AKNU/2026/GH1/BTECH/ECE/0001',
         'Full Name': 'B. Anusha',
         'Email': 'anusha@aknu.edu.in',
         'Phone': '9848099890',
         'Gender': 'female',
-        'Course': 'B.Tech',
-        'Department': 'Electronics & Communication Engineering',
-        'Year': '3',
-        'Semester': '5',
         'Permanent Address': 'Flat 201, River View Apts, Danavaipeta, Rajahmundry, AP 533103',
         'Guardian Name': 'B. Prasad',
         'Guardian Phone': '9848011224'
+      },
+      {
+        'Program Level': 'PG',
+        'Degree': 'MCA',
+        'Branch': 'Master of Computer Applications',
+        'Year': '1',
+        'Semester': '1',
+        'Roll Number': '25MCA012',
+        'Registration Number': 'AKNU/2026/BH1/MCA/MCA/0001',
+        'Full Name': 'M. Suresh',
+        'Email': 'msuresh@aknu.edu.in',
+        'Phone': '9848012345',
+        'Gender': 'male',
+        'Permanent Address': 'Opp. Clock Tower, Amalapuram, AP 533201',
+        'Guardian Name': 'M. Satyanarayana',
+        'Guardian Phone': '9848012346'
+      },
+      {
+        'Program Level': 'PG',
+        'Degree': 'MBA',
+        'Branch': 'Department of Management Studies',
+        'Year': '2',
+        'Semester': '3',
+        'Roll Number': '24MBA045',
+        'Registration Number': 'AKNU/2026/GH1/MBA/MBA/0001',
+        'Full Name': 'G. Swathi',
+        'Email': 'swathi@aknu.edu.in',
+        'Phone': '9848056789',
+        'Gender': 'female',
+        'Permanent Address': 'Near RTC Complex, Eluru, AP 534001',
+        'Guardian Name': 'G. Nageswara Rao',
+        'Guardian Phone': '9848056780'
+      },
+      {
+        'Program Level': 'PG',
+        'Degree': 'M.Tech',
+        'Branch': 'Computer Science & Engineering',
+        'Year': '1',
+        'Semester': '1',
+        'Roll Number': '25MTECH005',
+        'Registration Number': 'AKNU/2026/BH1/MTECH/CSE/0001',
+        'Full Name': 'Ch. Vamsi Krishna',
+        'Email': 'vamsikrishna@aknu.edu.in',
+        'Phone': '9848098765',
+        'Gender': 'male',
+        'Permanent Address': 'D.No 5-89, Tilak Road, Rajahmundry, AP 533101',
+        'Guardian Name': 'Ch. Appa Rao',
+        'Guardian Phone': '9848098766'
+      },
+      {
+        'Program Level': 'PhD',
+        'Degree': 'Ph.D',
+        'Branch': 'Computer Science & Engineering',
+        'Year': '1',
+        'Semester': '1',
+        'Roll Number': '25PHDCSE01',
+        'Registration Number': 'AKNU/2026/BH1/PHD/CSE/0001',
+        'Full Name': 'N. Rajesh',
+        'Email': 'nrajesh@aknu.edu.in',
+        'Phone': '9848091122',
+        'Gender': 'male',
+        'Permanent Address': 'D.No 12-4, Danavaipeta, Rajahmundry, AP 533103',
+        'Guardian Name': 'N. Subba Rao',
+        'Guardian Phone': '9848091123'
       }
     ];
 
     const ws = XLSX.utils.json_to_sheet(sampleData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Students');
-    XLSX.writeFile(wb, 'AKNU_Hostel_Bulk_Import_Sample.xlsx');
+    XLSX.writeFile(wb, 'AKNU_Hostel_Bulk_Import_Multi_Course_Sample.xlsx');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,9 +208,9 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
           {/* Download Template Banner */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
             <div>
-              <h4 className="text-xs font-bold text-blue-950">Pre-formatted University Template</h4>
+              <h4 className="text-xs font-bold text-blue-950">Pre-formatted Multi-Program University Template</h4>
               <p className="text-[11px] text-blue-800 mt-0.5">
-                Download template with Course, Department, Year, Permanent Address, and residential details.
+                Includes explicit <strong>Program Level (UG, PG, PhD)</strong>, Degree, Branch, Year, Semester & Address fields.
               </p>
             </div>
             <Button
@@ -137,8 +219,37 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
               leftIcon={<Download className="w-3.5 h-3.5" />}
               onClick={handleDownloadSample}
             >
-              Template
+              Download Template
             </Button>
+          </div>
+
+          {/* Quick Academic Reference Guide */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between text-slate-700 font-semibold text-[11px] uppercase tracking-wide">
+              <span>Supported Programs & Hierarchy Guide</span>
+              <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-bold">Auto-Smart Matching</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px]">
+              <div className="bg-white p-2 rounded border border-slate-200">
+                <span className="font-bold text-slate-800 block mb-0.5">Program Level & Degrees:</span>
+                <span className="text-slate-600">
+                  <strong className="text-blue-700">UG (Undergraduate):</strong> B.Tech (4 yrs), B.Sc, B.Com, B.A (3 yrs), B.Pharmacy<br />
+                  <strong className="text-purple-700">PG (Postgraduate):</strong> M.Tech, MCA, MBA, M.Sc, M.Com, M.A (2 yrs)<br />
+                  <strong className="text-amber-700">PhD (Doctoral):</strong> Ph.D (Research)
+                </span>
+              </div>
+              <div className="bg-white p-2 rounded border border-slate-200">
+                <span className="font-bold text-slate-800 block mb-0.5">Branches / Departments:</span>
+                <span className="text-slate-600">
+                  <strong className="text-indigo-700">Engineering:</strong> Civil, CSE, ECE, Mech, EEE, IT, AI-DS<br />
+                  <strong className="text-indigo-700">Postgraduate:</strong> MCA, MBA, Science, Commerce, Humanities<br />
+                  <strong className="text-indigo-700">Study Years:</strong> 1st to 4th Year (UG) or 1st to 2nd Year (PG)
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500 italic">
+              Tip: Set column <code>Program Level</code> to <code>UG</code>, <code>PG</code>, or <code>PhD</code>. Emails can be Gmail or University addresses (or left blank to auto-generate from roll number). Boys/Girls wing boundary rules are strictly verified automatically.
+            </p>
           </div>
 
           {/* Upload Dropzone */}
@@ -154,7 +265,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
               {file ? file.name : 'Choose an Excel (.xlsx) or CSV file'}
             </h4>
             <p className="text-xs text-slate-500 mt-1">
-              Supports automated duplicate prevention and batch academic/address assignment.
+              Supports automated duplicate prevention, smart degree/branch resolution, and wing RBAC.
             </p>
             {file && (
               <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">

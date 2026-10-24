@@ -609,6 +609,30 @@ export default function App() {
         <View style={styles.appHeaderTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.appHeaderUni}>ADIKAVI NANNAYA UNIVERSITY</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#E0AD83' }}>Hostel Management</Text>
+              <Text style={{ fontSize: 10, color: '#94a3b8' }}>•</Text>
+              <View style={{
+                backgroundColor: currentUser.assignedCategory === 'girls' ? 'rgba(244, 63, 94, 0.2)' : currentUser.assignedCategory === 'boys' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: currentUser.assignedCategory === 'girls' ? 'rgba(244, 63, 94, 0.4)' : currentUser.assignedCategory === 'boys' ? 'rgba(59, 130, 246, 0.4)' : 'rgba(245, 158, 11, 0.4)',
+              }}>
+                <Text style={{
+                  fontSize: 10,
+                  fontWeight: '800',
+                  color: currentUser.assignedCategory === 'girls' ? '#f43f5e' : currentUser.assignedCategory === 'boys' ? '#60a5fa' : '#f59e0b'
+                }}>
+                  {currentUser.assignedCategory === 'girls'
+                    ? (currentUser.student?.hostel_name || currentUser.assignedHostels?.[0]?.name || "Girls' Hostel")
+                    : currentUser.assignedCategory === 'boys'
+                    ? (currentUser.student?.hostel_name || currentUser.assignedHostels?.[0]?.name || "Boys' Hostel")
+                    : "All Hostels (Super Admin)"}
+                </Text>
+              </View>
+            </View>
             <Text style={styles.appHeaderRole}>
               Logged in: <Text style={{ fontWeight: '700', color: '#f59e0b' }}>{currentUser.fullName}</Text> (
               {currentUser.roleDisplay || currentUser.role})

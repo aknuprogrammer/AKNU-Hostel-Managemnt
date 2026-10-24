@@ -7,10 +7,20 @@ export async function getFeeStructures(req: AuthRequest, res: Response): Promise
   try {
     let whereClause = '';
     const params: any[] = [];
-    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
-      const placeholders = req.user.assignedHostels.map((_, i) => `$${i + 1}`).join(',');
-      whereClause = `WHERE fs.hostel_id IN (${placeholders})`;
-      params.push(...req.user.assignedHostels);
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      if (req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
+        const placeholders = req.user.assignedHostels.map((_, i) => `$${i + 1}`).join(',');
+        whereClause = `WHERE fs.hostel_id IN (${placeholders})`;
+        params.push(...req.user.assignedHostels);
+      } else {
+        whereClause = `WHERE h.category = $1`;
+        params.push(wing);
+      }
     }
 
     const fees = await executeQuery(`
@@ -56,10 +66,20 @@ export async function getStudentFeeLedgers(req: AuthRequest, res: Response): Pro
       sql += ` AND sfl.status = $${params.length}`;
     }
 
-    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
-      const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
-      params.push(...req.user.assignedHostels);
-      sql += ` AND fs.hostel_id IN (${placeholders})`;
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      if (req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
+        const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
+        params.push(...req.user.assignedHostels);
+        sql += ` AND fs.hostel_id IN (${placeholders})`;
+      } else {
+        sql += ` AND h.category = $${params.length + 1}`;
+        params.push(wing);
+      }
     }
 
     const ledgers = await executeQuery(sql, params);

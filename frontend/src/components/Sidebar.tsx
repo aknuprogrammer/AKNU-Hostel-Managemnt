@@ -50,16 +50,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Role permissions for sidebar tabs
   const canAccessDashboard = role !== 'student';
-  const canAccessScanner = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
-  const canAccessStudents = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
   const canAccessHostels = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
-  const canAccessStaff = ['super_admin', 'chief_warden'].includes(role);
+  const canAccessStudents = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
   const canAccessMess = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant', 'student'].includes(role);
+  const canAccessScanner = ['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role);
+  const canAccessLeave = true;
+  const canAccessComplaints = true;
   const canAccessAccounts = ['super_admin', 'chief_warden', 'assistant_warden', 'student'].includes(role);
   const canAccessSecurity = ['super_admin', 'chief_warden', 'assistant_warden'].includes(role);
+  const canAccessStaff = ['super_admin', 'chief_warden'].includes(role);
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: canAccessDashboard },
+    { id: 'hostels', label: 'Hostels & Rooms', icon: Building2, show: canAccessHostels },
+    { id: 'students', label: 'Student Records', icon: Users, show: canAccessStudents },
+    {
+      id: 'mess',
+      label: role === 'student' ? 'Hostel Menu' : 'Mess Operations',
+      icon: UtensilsCrossed,
+      show: canAccessMess
+    },
     {
       id: 'meal-scanner',
       label: 'Face Attendance Scanner',
@@ -67,17 +77,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       show: canAccessScanner,
       badge: 'Live'
     },
-    { id: 'students', label: 'Student Records', icon: Users, show: canAccessStudents },
-    { id: 'hostels', label: 'Hostels & Rooms', icon: Building2, show: canAccessHostels },
-    { id: 'staff-records', label: 'Staff Directory', icon: Contact, show: canAccessStaff },
-    { id: 'leave', label: 'Leave & Gate Pass', icon: CalendarCheck, show: true },
+    { id: 'leave', label: 'Leave & Gate Pass', icon: CalendarCheck, show: canAccessLeave },
+    { id: 'complaints', label: 'Complaints', icon: AlertCircle, show: canAccessComplaints },
     {
-      id: 'mess',
-      label: role === 'student' ? 'Hostel Menu' : 'Mess Operations',
-      icon: UtensilsCrossed,
-      show: canAccessMess
+      id: 'accounts',
+      label: role === 'student' ? 'My Fees' : 'Fee & Accounts',
+      icon: ReceiptIndianRupee,
+      show: canAccessAccounts
     },
-    { id: 'security', label: 'Visitor Logs', icon: ShieldAlert, show: canAccessSecurity }
+    { id: 'security', label: 'Visitor Logs', icon: ShieldAlert, show: canAccessSecurity },
+    { id: 'staff-records', label: 'Staff Directory', icon: Contact, show: canAccessStaff }
   ];
 
   return (

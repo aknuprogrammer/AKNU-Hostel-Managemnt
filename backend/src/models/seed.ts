@@ -47,96 +47,66 @@ export async function seedDatabase() {
   await executeQuery("INSERT INTO departments (id, code, name) VALUES ('dept-eng', 'ENG', 'English & Humanities') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code");
   await executeQuery("INSERT INTO departments (id, code, name) VALUES ('dept-econ', 'ECON', 'Economics') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code");
 
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-btech-cse', 'dept-cse', 'BTECH', 'B.Tech', 4) ON CONFLICT (id) DO UPDATE SET name = 'B.Tech', code = 'BTECH'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-mtech-cse', 'dept-cse', 'MTECH', 'M.Tech', 2) ON CONFLICT (id) DO UPDATE SET name = 'M.Tech', code = 'MTECH'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-mba', 'dept-mba', 'MBA', 'MBA', 2) ON CONFLICT (id) DO UPDATE SET name = 'MBA', code = 'MBA'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-mca', 'dept-cse', 'MCA', 'MCA', 2) ON CONFLICT (id) DO UPDATE SET name = 'MCA', code = 'MCA'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-bsc', 'dept-cse', 'BSC', 'B.Sc', 3) ON CONFLICT (id) DO UPDATE SET name = 'B.Sc', code = 'BSC'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-msc', 'dept-cse', 'MSC', 'M.Sc', 2) ON CONFLICT (id) DO UPDATE SET name = 'M.Sc', code = 'MSC'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-bcom', 'dept-mba', 'BCOM', 'B.Com', 3) ON CONFLICT (id) DO UPDATE SET name = 'B.Com', code = 'BCOM'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-ba', 'dept-mba', 'BA', 'B.A', 3) ON CONFLICT (id) DO UPDATE SET name = 'B.A', code = 'BA'");
-  await executeQuery("INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ('crs-phd', 'dept-cse', 'PHD', 'Ph.D', 3) ON CONFLICT (id) DO UPDATE SET name = 'Ph.D', code = 'PHD'");
+  await executeQuery("INSERT INTO departments (id, code, name) VALUES ('dept-mca', 'MCA', 'Master of Computer Applications') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code");
+
+  // Remove duplicate branch-merged courses so B.Tech appears once
+  await executeQuery("DELETE FROM courses WHERE id IN ('crs-btech-cse', 'crs-btech-civil', 'crs-btech-ece', 'crs-btech-mech', 'crs-btech-eee', 'crs-btech-it', 'crs-btech-aids', 'crs-mtech-cse')");
+
+  const safeInsertCourse = async (id: string, deptId: string, code: string, name: string, duration: number, programLevel: 'UG' | 'PG' | 'PhD' = 'UG') => {
+    try {
+      await executeQuery(
+        `INSERT INTO courses (id, department_id, code, name, duration_years, program_level)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, code = EXCLUDED.code, duration_years = EXCLUDED.duration_years, program_level = EXCLUDED.program_level`,
+        [id, deptId, code, name, duration, programLevel]
+      );
+    } catch (e: any) {
+      if (!e.message?.includes('unique') && !e.message?.includes('already exists')) {
+        console.warn(`[Course Seed Notice] ${id}: ${e.message}`);
+      }
+    }
+  };
+
+  // UG Programmes (Undergraduate)
+  await safeInsertCourse('crs-btech', 'dept-cse', 'BTECH', 'B.Tech', 4, 'UG');
+  await safeInsertCourse('crs-bsc', 'dept-chem', 'BSC', 'B.Sc', 3, 'UG');
+  await safeInsertCourse('crs-bcom', 'dept-comm', 'BCOM', 'B.Com', 3, 'UG');
+  await safeInsertCourse('crs-ba', 'dept-eng', 'BA', 'B.A', 3, 'UG');
+  await safeInsertCourse('crs-bpharm', 'dept-pharm', 'BPHARM', 'B.Pharmacy', 4, 'UG');
+  await safeInsertCourse('crs-bed', 'dept-eng', 'BED', 'B.Ed', 2, 'UG');
+
+  // PG Programmes (Postgraduate)
+  await safeInsertCourse('crs-mtech', 'dept-cse', 'MTECH', 'M.Tech', 2, 'PG');
+  await safeInsertCourse('crs-mca', 'dept-mca', 'MCA', 'MCA', 2, 'PG');
+  await safeInsertCourse('crs-mba', 'dept-mba', 'MBA', 'MBA', 2, 'PG');
+  await safeInsertCourse('crs-msc', 'dept-chem', 'MSC', 'M.Sc', 2, 'PG');
+  await safeInsertCourse('crs-mcom', 'dept-comm', 'MCOM', 'M.Com', 2, 'PG');
+  await safeInsertCourse('crs-ma', 'dept-eng', 'MA', 'M.A', 2, 'PG');
+  await safeInsertCourse('crs-mpharm', 'dept-pharm', 'MPHARM', 'M.Pharmacy', 2, 'PG');
+
+  // Doctoral / Research
+  await safeInsertCourse('crs-phd', 'dept-cse', 'PHD', 'Ph.D', 3, 'PhD');
 
   await executeQuery("INSERT INTO academic_years (id, name, start_date, end_date, is_current) VALUES ('ay-2026-27', '2026-2027', '2026-07-01', '2027-06-30', true) ON CONFLICT (id) DO NOTHING");
 
   // Ensure gender_wing column exists on users
   await executeQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender_wing VARCHAR(10) DEFAULT 'all'");
 
-  // 3. Dedicated Staff Users (Super Admin + Separate Boys & Girls Staff Logins)
-  const staffAccounts = [
-    {
-      id: 'usr-admin',
-      email: 'admin@aknu.edu.in',
-      fullName: 'Dr. K. S. Rao (Super Admin)',
-      role: 'super_admin',
-      genderWing: 'all',
-      phone: '9848011221'
-    },
-    {
-      id: 'usr-chief-boys',
-      email: 'chiefwarden.boys@aknu.edu.in',
-      fullName: 'Prof. M. Ramana (Chief Warden Boys)',
-      role: 'chief_warden',
-      genderWing: 'boys',
-      phone: '9848011223'
-    },
-    {
-      id: 'usr-chief-girls',
-      email: 'chiefwarden.girls@aknu.edu.in',
-      fullName: 'Prof. K. Vijaya (Chief Warden Girls)',
-      role: 'chief_warden',
-      genderWing: 'girls',
-      phone: '9848011235'
-    },
-    {
-      id: 'usr-warden-boys',
-      email: 'warden.boys@aknu.edu.in',
-      fullName: 'Dr. P. Satyanarayana (Assistant Warden Boys)',
-      role: 'assistant_warden',
-      genderWing: 'boys',
-      phone: '9848011224'
-    },
-    {
-      id: 'usr-warden-girls',
-      email: 'warden.girls@aknu.edu.in',
-      fullName: 'Dr. S. Lakshmi (Assistant Warden Girls)',
-      role: 'assistant_warden',
-      genderWing: 'girls',
-      phone: '9848011225'
-    },
-    {
-      id: 'usr-ja-boys',
-      email: 'ja.boys@aknu.edu.in',
-      fullName: 'Mr. B. Suresh (Junior Assistant Boys)',
-      role: 'junior_assistant',
-      genderWing: 'boys',
-      phone: '9848011241'
-    },
-    {
-      id: 'usr-ja-girls',
-      email: 'ja.girls@aknu.edu.in',
-      fullName: 'Mrs. K. Anitha (Junior Assistant Girls)',
-      role: 'junior_assistant',
-      genderWing: 'girls',
-      phone: '9848011242'
-    }
-  ];
+  // 3. Super Admin User Account (Campus-wide administrator)
+  // ONLY Super Admin is seeded. All Wardens, Assistants, and Staff are added by Super Admin from the UI.
+  await executeQuery(
+    `INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
+     VALUES ('usr-admin', 'admin@aknu.edu.in', $1, 'Dr. K. S. Rao (Super Admin)', '9848011221', 'super_admin', 'all', true)
+     ON CONFLICT (id) DO UPDATE SET
+       email = EXCLUDED.email,
+       full_name = EXCLUDED.full_name,
+       role = EXCLUDED.role,
+       gender_wing = EXCLUDED.gender_wing,
+       is_active = true`,
+    [passwordHash]
+  );
 
-  for (const acc of staffAccounts) {
-    await executeQuery(
-      `INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
-       ON CONFLICT (id) DO UPDATE SET
-         email = EXCLUDED.email,
-         full_name = EXCLUDED.full_name,
-         role = EXCLUDED.role,
-         gender_wing = EXCLUDED.gender_wing,
-         is_active = true`,
-      [acc.id, acc.email, passwordHash, acc.fullName, acc.phone, acc.role, acc.genderWing]
-    );
-  }
-
-  // 4. Meal Sessions (Daily timings schedule)
+  // 4. Meal Sessions (Daily timings schedule for dining attendance)
   const sessions = [
     { id: 'ms-breakfast', name: 'Morning Breakfast', code: 'breakfast', startTime: '07:00', endTime: '10:00', grace: 0 },
     { id: 'ms-lunch', name: 'Afternoon Lunch', code: 'lunch', startTime: '12:00', endTime: '15:00', grace: 0 },
@@ -199,5 +169,41 @@ export async function seedDatabase() {
     CREATE INDEX IF NOT EXISTS idx_proxy_target_date ON proxy_meal_permissions(target_student_id, service_date, meal_session_id)
   `);
 
-  console.log('[Seed] Clean database initialized: 5 core roles, 7 staff logins, late meal permissions & OTP table ready.');
+  // Purge sample physical infrastructure, sample staff accounts, and all sample mock records
+  // No sample hostels, rooms, or beds are seeded. Super Admin will add real hostels and staff from the UI.
+  const cleanupQueries = [
+    'DELETE FROM meal_transaction_corrections',
+    'DELETE FROM scan_attempts',
+    'DELETE FROM proxy_meal_permissions',
+    'DELETE FROM meal_transactions',
+    'DELETE FROM gate_movements',
+    'DELETE FROM gate_passes',
+    'DELETE FROM leave_applications',
+    'DELETE FROM complaints',
+    'DELETE FROM allocation_history',
+    'DELETE FROM student_allocations',
+    'DELETE FROM students',
+    'DELETE FROM mess_inventory_transactions',
+    'DELETE FROM mess_inventory',
+    'DELETE FROM mess_menus',
+    'DELETE FROM beds',
+    'DELETE FROM rooms',
+    'DELETE FROM floors',
+    'DELETE FROM blocks',
+    'DELETE FROM user_hostel_assignments',
+    'DELETE FROM hostels',
+    "DELETE FROM users WHERE id IN ('usr-chief-boys', 'usr-chief-girls', 'usr-warden-boys', 'usr-warden-girls', 'usr-ja-boys', 'usr-ja-girls') OR role = 'student'"
+  ];
+
+  for (const query of cleanupQueries) {
+    try {
+      await executeQuery(query);
+    } catch (err: any) {
+      if (!err.message?.includes('does not exist')) {
+        console.warn(`[Seed Cleanup Notice] (${query}):`, err.message);
+      }
+    }
+  }
+
+  console.log('[Seed] Database ready: Super Admin active, academic master list ready, 0 sample hostels/rooms. Ready for live setup.');
 }

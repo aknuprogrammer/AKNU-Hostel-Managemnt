@@ -29,49 +29,13 @@ export interface RolePreset {
   category: 'all' | 'boys' | 'girls';
 }
 
-// Authorized system roles with active portal access presets
+// Authorized system role preset for initial administrative access
 export const ROLE_PRESETS: Record<string, RolePreset> = {
   super_admin: {
     email: 'admin@aknu.edu.in',
     label: 'Super Admin',
     desc: 'Dr. K. S. Rao • Campus-wide governance (All Wings)',
     category: 'all'
-  },
-  chief_warden_boys: {
-    email: 'chiefwarden.boys@aknu.edu.in',
-    label: 'Chief Warden (Boys)',
-    desc: 'Chief Warden • Boys Wing Admissions & Late Meal Approvals',
-    category: 'boys'
-  },
-  chief_warden_girls: {
-    email: 'chiefwarden.girls@aknu.edu.in',
-    label: 'Chief Warden (Girls)',
-    desc: 'Chief Warden • Girls Wing Admissions & Late Meal Approvals',
-    category: 'girls'
-  },
-  assistant_warden_boys: {
-    email: 'warden.boys@aknu.edu.in',
-    label: 'Assistant Warden (Boys)',
-    desc: 'Assistant Warden • Boys Hostel Inspection & Approvals',
-    category: 'boys'
-  },
-  assistant_warden_girls: {
-    email: 'warden.girls@aknu.edu.in',
-    label: 'Assistant Warden (Girls)',
-    desc: 'Assistant Warden • Girls Hostel Inspection & Approvals',
-    category: 'girls'
-  },
-  junior_assistant_boys: {
-    email: 'ja.boys@aknu.edu.in',
-    label: 'Junior Assistant (Boys)',
-    desc: 'Junior Assistant • Boys Room Allocation & Mess Face Scanning',
-    category: 'boys'
-  },
-  junior_assistant_girls: {
-    email: 'ja.girls@aknu.edu.in',
-    label: 'Junior Assistant (Girls)',
-    desc: 'Junior Assistant • Girls Room Allocation & Mess Face Scanning',
-    category: 'girls'
   }
 };
 
@@ -130,12 +94,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const preset = ROLE_PRESETS[role];
     if (preset) {
       await login(preset.email, 'Aknu@2026!');
+      try {
+        const targetTab = role === 'student' ? 'mess' : 'dashboard';
+        const targetUrl = targetTab === 'dashboard' ? '/' : `/${targetTab}`;
+        window.history.replaceState({ tab: targetTab }, '', targetUrl);
+      } catch {}
     }
   };
 
   const logout = () => {
     clearStoredToken();
     setUser(null);
+    try {
+      if (window.location.pathname !== '/' && window.location.pathname !== '') {
+        window.history.replaceState({ tab: 'dashboard' }, '', '/');
+      }
+    } catch {}
   };
 
   return (

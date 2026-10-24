@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 // Default to Wi-Fi host IP for physical device testing, with 10.0.2.2 for Android emulator
-let customBaseUrl = 'http://192.168.29.54:5000/api/v1';
+let customBaseUrl = 'http://192.168.0.104:5000/api/v1';
 
 export function getApiBaseUrl(): string {
   return customBaseUrl;

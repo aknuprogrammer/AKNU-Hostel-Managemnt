@@ -5,13 +5,22 @@ import { AuthRequest, logAudit } from '../middleware/auth.js';
 
 export async function getHostels(req: AuthRequest, res: Response): Promise<void> {
   try {
-    let whereClause = '';
+    const whereClauses: string[] = [];
     const params: any[] = [];
+
+    // Enforce strict gender wing isolation
+    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+      params.push(req.user.assignedCategory);
+      whereClauses.push(`h.category = $${params.length}`);
+    }
+
     if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
-      const placeholders = req.user.assignedHostels.map((_, i) => `$${i + 1}`).join(',');
-      whereClause = `WHERE h.id IN (${placeholders})`;
+      const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
+      whereClauses.push(`h.id IN (${placeholders})`);
       params.push(...req.user.assignedHostels);
     }
+
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     const hostelsRes = await executeQuery(`
       SELECT h.*, u.full_name as chief_warden_name,
@@ -46,6 +55,14 @@ export async function getHostelDetails(req: AuthRequest, res: Response): Promise
       return;
     }
 
+    // Wing separation check
+    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+      if (hostelRes.rows[0].category !== req.user.assignedCategory) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot access hostel from a different gender wing' });
+        return;
+      }
+    }
+
     const blocks = await executeQuery('SELECT * FROM blocks WHERE hostel_id = $1 ORDER BY code ASC', [id]);
     const rooms = await executeQuery(`
       SELECT r.*, f.floor_number, f.name as floor_name, b.code as block_code
@@ -74,7 +91,7 @@ export async function getRoomsWithBeds(req: AuthRequest, res: Response): Promise
   try {
     let sql = `
       SELECT r.id as room_id, r.room_number, r.capacity, r.current_occupancy, r.room_type, r.status as room_status,
-             f.floor_number, f.name as floor_name,
+             r.floor_id, f.id as floor_table_id, f.floor_number, f.name as floor_name,
              h.id as hostel_id, h.name as hostel_name,
              b.id as bed_id, b.bed_number, b.status as bed_status,
              s.id as student_id, s.full_name as student_name, s.roll_number
@@ -87,6 +104,12 @@ export async function getRoomsWithBeds(req: AuthRequest, res: Response): Promise
       WHERE 1=1
     `;
     const params: any[] = [];
+
+    // Enforce strict gender wing isolation
+    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+      params.push(req.user.assignedCategory);
+      sql += ` AND h.category = $${params.length}`;
+    }
 
     if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
       const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
@@ -245,6 +268,17 @@ export async function createHostel(req: AuthRequest, res: Response): Promise<voi
     return;
   }
 
+  // Enforce wing restriction on hostel creation
+  if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+    if (cleanCategory !== req.user.assignedCategory) {
+      res.status(403).json({
+        success: false,
+        error: `Access Denied: You are in the ${req.user.assignedCategory.toUpperCase()} wing and cannot create a ${cleanCategory} hostel.`
+      });
+      return;
+    }
+  }
+
   try {
     const existing = await executeQuery('SELECT id FROM hostels WHERE code = $1', [cleanCode]);
     if (existing.rows.length > 0) {
@@ -343,6 +377,19 @@ export async function createHostel(req: AuthRequest, res: Response): Promise<voi
 export async function deleteHostel(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
   try {
+    const target = await executeQuery('SELECT category FROM hostels WHERE id = $1', [id]);
+    if (target.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Hostel not found' });
+      return;
+    }
+
+    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+      if (target.rows[0].category !== req.user.assignedCategory) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot delete hostel from another wing' });
+        return;
+      }
+    }
+
     const checkRes = await executeQuery(
       'SELECT id FROM student_allocations WHERE hostel_id = $1 AND status = \'active\'',
       [id]
@@ -389,6 +436,19 @@ export async function updateHostel(req: AuthRequest, res: Response): Promise<voi
   }
 
   try {
+    const target = await executeQuery('SELECT category FROM hostels WHERE id = $1', [id]);
+    if (target.rows.length === 0) {
+      res.status(404).json({ success: false, error: 'Hostel not found' });
+      return;
+    }
+
+    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
+      if (target.rows[0].category !== req.user.assignedCategory || cleanCategory !== req.user.assignedCategory) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot change hostel category to a different wing' });
+        return;
+      }
+    }
+
     const existing = await executeQuery('SELECT id FROM hostels WHERE LOWER(code) = LOWER($1) AND id != $2', [code.trim(), id]);
     if (existing.rows.length > 0) {
       res.status(400).json({ success: false, error: `Another hostel with code "${code}" already exists` });
@@ -398,7 +458,9 @@ export async function updateHostel(req: AuthRequest, res: Response): Promise<voi
     await executeTransaction(async (query) => {
       await query(
         `UPDATE hostels
-         SET name = $1, code = $2, category = $3, campus = $4, chief_warden_id = $5, updated_at = CURRENT_TIMESTAMP
+         SET name = $1, code = $2, category = $3, campus = $4,
+             chief_warden_id = COALESCE($5, chief_warden_id),
+             updated_at = CURRENT_TIMESTAMP
          WHERE id = $6`,
         [name.trim(), code.trim().toUpperCase(), cleanCategory, (campus || '').trim(), chiefWardenId || null, id]
       );
@@ -485,12 +547,14 @@ export async function getUnallocatedCandidates(req: AuthRequest, res: Response):
   const { gender, departmentId, courseId, yearOfStudy, search } = req.query;
 
   try {
-    let sql = `
-      SELECT 
-        s.id, s.student_id_code, s.roll_number, s.reg_number, s.full_name, s.gender,
-        s.year_of_study, s.current_semester, s.phone, s.email,
-        d.id as department_id, d.name as department_name, d.code as department_code,
-        c.id as course_id, c.name as course_name, c.code as course_code
+    // 1. Determine wing / gender constraint
+    let wingGender = gender && gender !== 'all' ? String(gender) : null;
+    if (req.user?.assignedCategory && ['boys', 'girls'].includes(req.user.assignedCategory)) {
+      wingGender = req.user.assignedCategory === 'boys' ? 'male' : 'female';
+    }
+
+    // 2. Base query for unallocated candidates in this wing
+    let baseSql = `
       FROM students s
       LEFT JOIN departments d ON s.department_id = d.id
       LEFT JOIN courses c ON s.course_id = c.id
@@ -500,44 +564,124 @@ export async function getUnallocatedCandidates(req: AuthRequest, res: Response):
           WHERE sa.student_id = s.id AND sa.status = 'active'
         )
     `;
-    const params: any[] = [];
-
-    if (req.user?.assignedCategory && ['boys', 'girls'].includes(req.user.assignedCategory)) {
-      const allowedGender = req.user.assignedCategory === 'boys' ? 'male' : 'female';
-      params.push(allowedGender);
-      sql += ` AND s.gender = $${params.length}`;
-    } else if (gender && gender !== 'all') {
-      params.push(gender);
-      sql += ` AND s.gender = $${params.length}`;
+    const baseParams: any[] = [];
+    if (wingGender) {
+      baseParams.push(wingGender);
+      baseSql += ` AND s.gender = $1`;
     }
 
+    // Fetch distinct cohort values present strictly in the unallocated candidates
+    const cohortRes = await executeQuery(`
+      SELECT 
+        s.department_id,
+        COALESCE(d.name, 'General Studies') as department_name,
+        COALESCE(d.code, 'GEN') as department_code,
+        s.course_id,
+        COALESCE(c.name, 'General Course') as course_name,
+        COALESCE(c.code, 'GEN') as course_code,
+        s.year_of_study,
+        COUNT(s.id) as count
+      ${baseSql}
+      GROUP BY s.department_id, d.name, d.code, s.course_id, c.name, c.code, s.year_of_study
+    `, baseParams);
+
+    const deptMap = new Map<string, { id: string; name: string; code: string; count: number }>();
+    const courseMap = new Map<string, { id: string; name: string; code: string; count: number }>();
+    const yearMap = new Map<number, number>();
+    let totalUnallocated = 0;
+
+    for (const row of cohortRes.rows) {
+      const cCount = parseInt(row.count, 10) || 0;
+      totalUnallocated += cCount;
+
+      if (row.department_id) {
+        const existing = deptMap.get(row.department_id);
+        if (existing) {
+          existing.count += cCount;
+        } else {
+          deptMap.set(row.department_id, {
+            id: row.department_id,
+            name: row.department_name,
+            code: row.department_code,
+            count: cCount
+          });
+        }
+      }
+
+      if (row.course_id) {
+        const existing = courseMap.get(row.course_id);
+        if (existing) {
+          existing.count += cCount;
+        } else {
+          courseMap.set(row.course_id, {
+            id: row.course_id,
+            name: row.course_name,
+            code: row.course_code,
+            count: cCount
+          });
+        }
+      }
+
+      const y = parseInt(row.year_of_study, 10);
+      if (y && !isNaN(y)) {
+        yearMap.set(y, (yearMap.get(y) || 0) + cCount);
+      }
+    }
+
+    const availableDepartments = Array.from(deptMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const availableCourses = Array.from(courseMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    const availableYears = Array.from(yearMap.entries())
+      .map(([year, count]) => ({
+        year,
+        label: year === 1 ? '1st Year' : year === 2 ? '2nd Year' : year === 3 ? '3rd Year' : year === 4 ? '4th Year' : `Year ${year}`,
+        count
+      }))
+      .sort((a, b) => a.year - b.year);
+
+    // 3. Query filtered candidates matching applied cohort filters
+    let filterSql = `
+      SELECT 
+        s.id, s.student_id_code, s.roll_number, s.reg_number, s.full_name, s.gender,
+        s.year_of_study, s.current_semester, s.phone, s.email,
+        d.id as department_id, d.name as department_name, d.code as department_code,
+        c.id as course_id, c.name as course_name, c.code as course_code
+      ${baseSql}
+    `;
+    const filterParams: any[] = [...baseParams];
+
     if (departmentId && departmentId !== 'all') {
-      params.push(departmentId);
-      sql += ` AND s.department_id = $${params.length}`;
+      filterParams.push(departmentId);
+      filterSql += ` AND s.department_id = $${filterParams.length}`;
     }
 
     if (courseId && courseId !== 'all') {
-      params.push(courseId);
-      sql += ` AND s.course_id = $${params.length}`;
+      filterParams.push(courseId);
+      filterSql += ` AND s.course_id = $${filterParams.length}`;
     }
 
     if (yearOfStudy && yearOfStudy !== 'all') {
-      params.push(parseInt(String(yearOfStudy)) || 1);
-      sql += ` AND s.year_of_study = $${params.length}`;
+      filterParams.push(parseInt(String(yearOfStudy)) || 1);
+      filterSql += ` AND s.year_of_study = $${filterParams.length}`;
     }
 
     if (search) {
-      params.push(`%${String(search).trim()}%`);
-      sql += ` AND (s.full_name ILIKE $${params.length} OR s.roll_number ILIKE $${params.length} OR s.reg_number ILIKE $${params.length})`;
+      filterParams.push(`%${String(search).trim()}%`);
+      filterSql += ` AND (s.full_name ILIKE $${filterParams.length} OR s.roll_number ILIKE $${filterParams.length} OR s.reg_number ILIKE $${filterParams.length})`;
     }
 
-    sql += ' ORDER BY s.year_of_study ASC, c.code ASC, s.roll_number ASC LIMIT 300';
+    filterSql += ' ORDER BY s.year_of_study ASC, c.code ASC, s.roll_number ASC LIMIT 300';
 
-    const result = await executeQuery(sql, params);
+    const result = await executeQuery(filterSql, filterParams);
     res.json({
       success: true,
       data: result.rows,
-      totalCount: result.rows.length
+      totalCount: result.rows.length,
+      availableFilters: {
+        totalUnallocated,
+        departments: availableDepartments,
+        courses: availableCourses,
+        years: availableYears
+      }
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -545,7 +689,7 @@ export async function getUnallocatedCandidates(req: AuthRequest, res: Response):
 }
 
 export async function batchAllocateCohort(req: AuthRequest, res: Response): Promise<void> {
-  const { targetHostelId, targetFloorId, studentIds, notes } = req.body;
+  const { targetHostelId, targetFloorId, targetRoomId, studentIds, notes } = req.body;
 
   if (!targetHostelId) {
     res.status(400).json({ success: false, error: 'Target hostel ID is required' });
@@ -615,10 +759,17 @@ export async function batchAllocateCohort(req: AuthRequest, res: Response): Prom
         AND r.status = 'active'
     `;
     const bedParams: any[] = [targetHostelId];
-    if (targetFloorId) {
+
+    if (targetFloorId && targetFloorId !== 'all') {
       bedParams.push(targetFloorId);
-      bedSql += ` AND fl.id = $2`;
+      bedSql += ` AND (fl.id = $${bedParams.length} OR fl.floor_number::text = $${bedParams.length})`;
     }
+
+    if (targetRoomId && targetRoomId !== 'all') {
+      bedParams.push(targetRoomId);
+      bedSql += ` AND (r.id = $${bedParams.length} OR r.room_number = $${bedParams.length})`;
+    }
+
     bedSql += ` ORDER BY bl.code ASC, fl.floor_number ASC, r.room_number ASC, b.bed_number ASC`;
 
     const vacantBedsRes = await executeQuery(bedSql, bedParams);

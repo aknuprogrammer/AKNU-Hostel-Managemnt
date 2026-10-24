@@ -592,6 +592,17 @@ export async function getRecentScans(req: AuthRequest, res: Response): Promise<v
     let params: any[] = [];
     let pIdx = 1;
 
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      whereClauses.push(`h.category = $${pIdx}`);
+      params.push(wing);
+      pIdx++;
+    }
+
     if (hostelId) {
       whereClauses.push(`mt.hostel_id = $${pIdx}`);
       params.push(hostelId);
@@ -630,16 +641,35 @@ export async function getMealReports(req: AuthRequest, res: Response): Promise<v
   const targetDate = (date as string) || new Date().toISOString().split('T')[0];
 
   try {
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    let mealJoinFilter = "AND mt.service_date = $1 AND mt.status = 'SUCCESS'";
+    const mealParams: any[] = [targetDate];
+    if (hostelId) {
+      mealParams.push(hostelId);
+      mealJoinFilter += ` AND mt.hostel_id = $${mealParams.length}`;
+    }
+    if (wing) {
+      mealParams.push(wing);
+      mealJoinFilter += ` AND mt.hostel_category = $${mealParams.length}`;
+    }
+
     // Session counts for target date
     const sessionCountsRes = await executeQuery(
       `SELECT ms.id as session_id, ms.name as session_name, ms.code,
               COUNT(mt.id) as successful_meals
        FROM meal_sessions ms
-       LEFT JOIN meal_transactions mt ON ms.id = mt.meal_session_id AND mt.service_date = $1 AND mt.status = 'SUCCESS'
-       ${hostelId ? 'AND mt.hostel_id = $2' : ''}
+       LEFT JOIN (
+         SELECT mt2.*, h2.category as hostel_category
+         FROM meal_transactions mt2
+         JOIN hostels h2 ON mt2.hostel_id = h2.id
+       ) mt ON ms.id = mt.meal_session_id ${mealJoinFilter}
        GROUP BY ms.id, ms.name, ms.code, ms.start_time
        ORDER BY ms.start_time ASC`,
-      hostelId ? [targetDate, hostelId] : [targetDate]
+      mealParams
     );
 
     // Scan attempts breakdown
@@ -672,11 +702,16 @@ export async function getWingStudentsForFaceScan(req: AuthRequest, res: Response
     let pIdx = 1;
 
     // Filter by staff wing (boys / girls)
-    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
-      const gender = req.user.assignedCategory === 'girls' ? 'female' : 'male';
-      whereClauses.push(`(s.gender = $${pIdx} OR h.category = '${req.user.assignedCategory}')`);
-      params.push(gender);
-      pIdx++;
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      const gender = wing === 'girls' ? 'female' : 'male';
+      whereClauses.push(`(s.gender = $${pIdx} AND (h.category = $${pIdx + 1} OR sa.hostel_id IS NULL))`);
+      params.push(gender, wing);
+      pIdx += 2;
     }
 
     const studentsRes = await executeQuery(
@@ -711,11 +746,16 @@ export async function getLateMealPermissions(req: AuthRequest, res: Response): P
     let params: any[] = [serviceDate];
     let pIdx = 2;
 
-    if (req.user?.role !== 'super_admin' && req.user?.assignedCategory && req.user.assignedCategory !== 'all') {
-      const gender = req.user.assignedCategory === 'girls' ? 'female' : 'male';
-      whereClauses.push(`(s.gender = $${pIdx} OR h.category = '${req.user.assignedCategory}')`);
-      params.push(gender);
-      pIdx++;
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      const gender = wing === 'girls' ? 'female' : 'male';
+      whereClauses.push(`(s.gender = $${pIdx} AND (h.category = $${pIdx + 1} OR sa.hostel_id IS NULL))`);
+      params.push(gender, wing);
+      pIdx += 2;
     }
 
     const permsRes = await executeQuery(
@@ -777,6 +817,19 @@ export async function createLateMealPermission(req: AuthRequest, res: Response):
     }
 
     const student = studentRes.rows[0];
+
+    // Wing boundary check
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const staffWing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    if (staffWing) {
+      const staffGender = staffWing === 'girls' ? 'female' : 'male';
+      if (student.gender !== staffGender && student.hostel_category !== staffWing) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot grant late meal permission to student outside your assigned wing' });
+        return;
+      }
+    }
 
     // Optional proxy student
     let proxyStudentId = null;

@@ -104,12 +104,21 @@ export const App: React.FC = () => {
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
+  const isInitialLoadRef = React.useRef(true);
+  const prevUserIdRef = React.useRef<string | null>(null);
+
   const handleLoginFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoggingIn(true);
     setLoginError('');
     try {
       const res = await login(email, password);
+      // Guarantee fresh manual login always opens dashboard (or mess for students)
+      const targetTab: ActiveTab = res?.user?.role === 'student' ? 'mess' : 'dashboard';
+      setActiveTabState(targetTab);
+      const targetUrl = targetTab === 'dashboard' ? '/' : `/${targetTab}`;
+      window.history.replaceState({ tab: targetTab }, '', targetUrl);
+      prevUserIdRef.current = res?.user?.id || null;
       if (res?.requiresPasswordChange) {
         setShowSetupModal(true);
       }
@@ -120,25 +129,52 @@ export const App: React.FC = () => {
     }
   };
 
-  // Role-based initial page routing:
-  // - Students NEVER see Dashboard -> automatically route to 'mess' (Mess Operations)
-  // - Admins/Management -> guaranteed to start on 'dashboard'
+  // Role-based page routing:
+  // - On initial load / page refresh: PRESERVE current URL and tab from URL (unless unauthorized for role)
+  // - On user switch while active: Navigate to dashboard (or mess for students)
+  // - On logout: Reset URL to '/' and tab to 'dashboard'
   React.useEffect(() => {
+    if (loading) return;
+
     if (user) {
-      if (user.role === 'student') {
-        if (activeTab === 'dashboard' || window.location.pathname === '/' || window.location.pathname === '/dashboard') {
-          setActiveTabState('mess');
-          if (window.location.pathname !== '/mess') {
-            window.history.replaceState({ tab: 'mess' }, '', '/mess');
-          }
+      if (isInitialLoadRef.current) {
+        // App mounted or page refreshed with active user session:
+        // PRESERVE the tab specified in the URL!
+        const urlTab = getTabFromUrl();
+        let targetTab = urlTab;
+        if (user.role === 'student' && !['mess', 'leave', 'complaints', 'accounts', 'my-id'].includes(urlTab)) {
+          targetTab = 'mess';
         }
-      } else if (user.role === 'super_admin') {
-        if (activeTab !== 'dashboard' && (window.location.pathname === '/' || window.location.pathname === '/dashboard')) {
-          setActiveTabState('dashboard');
+        setActiveTabState(targetTab);
+        const targetUrl = targetTab === 'dashboard' ? '/' : `/${targetTab}`;
+        if (window.location.pathname !== targetUrl) {
+          window.history.replaceState({ tab: targetTab }, '', targetUrl);
+        }
+        isInitialLoadRef.current = false;
+        prevUserIdRef.current = user.id;
+      } else if (prevUserIdRef.current && prevUserIdRef.current !== user.id) {
+        // Switched to a different user persona while app is running -> open dashboard
+        const targetTab: ActiveTab = user.role === 'student' ? 'mess' : 'dashboard';
+        setActiveTabState(targetTab);
+        const targetUrl = targetTab === 'dashboard' ? '/' : `/${targetTab}`;
+        window.history.replaceState({ tab: targetTab }, '', targetUrl);
+        prevUserIdRef.current = user.id;
+      } else if (user.role === 'student' && !['mess', 'leave', 'complaints', 'accounts', 'my-id'].includes(activeTab)) {
+        setActiveTabState('mess');
+        if (window.location.pathname !== '/mess') {
+          window.history.replaceState({ tab: 'mess' }, '', '/mess');
         }
       }
+    } else {
+      // User is not authenticated
+      prevUserIdRef.current = null;
+      isInitialLoadRef.current = false;
+      setActiveTabState('dashboard');
+      if (window.location.pathname !== '/' && window.location.pathname !== '') {
+        window.history.replaceState({ tab: 'dashboard' }, '', '/');
+      }
     }
-  }, [user?.id, user?.role, activeTab]);
+  }, [user, loading, activeTab]);
 
   if (loading) {
     return (
@@ -207,14 +243,14 @@ export const App: React.FC = () => {
               <form onSubmit={handleLoginFormSubmit} className="mt-6 space-y-4">
                 <div>
                   <label className="text-sm font-bold text-[#202B3C] block mb-1.5">
-                    University Email Address or Roll Number
+                    Email Address or Roll Number
                   </label>
                   <div className="relative">
                     <Mail className="w-5 h-5 text-[#737C89] absolute left-3.5 top-3.5" />
                     <input
                       required
                       type="text"
-                      placeholder="e.g. 22CSE042 or warden.boys@aknu.edu.in"
+                      placeholder="e.g. staff@gmail.com, 22CSE042, or admin@aknu.edu.in"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full pl-11 pr-4 py-3 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-sm text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5] focus:ring-2 focus:ring-[#5276A5]/20 shadow-xs"

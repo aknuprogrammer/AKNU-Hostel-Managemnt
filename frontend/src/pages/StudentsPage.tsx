@@ -56,7 +56,28 @@ interface AcademicCourse {
   code: string;
   name: string;
   duration_years: number;
+  program_level?: 'UG' | 'PG' | 'PhD';
 }
+
+const DEFAULT_COURSES: AcademicCourse[] = [
+  // UG Programmes (Undergraduate)
+  { id: 'crs-btech', department_id: 'dept-cse', code: 'BTECH', name: 'B.Tech', duration_years: 4, program_level: 'UG' },
+  { id: 'crs-bsc', department_id: 'dept-chem', code: 'BSC', name: 'B.Sc', duration_years: 3, program_level: 'UG' },
+  { id: 'crs-bcom', department_id: 'dept-comm', code: 'BCOM', name: 'B.Com', duration_years: 3, program_level: 'UG' },
+  { id: 'crs-ba', department_id: 'dept-eng', code: 'BA', name: 'B.A', duration_years: 3, program_level: 'UG' },
+  { id: 'crs-bpharm', department_id: 'dept-pharm', code: 'BPHARM', name: 'B.Pharmacy', duration_years: 4, program_level: 'UG' },
+  { id: 'crs-bed', department_id: 'dept-eng', code: 'BED', name: 'B.Ed', duration_years: 2, program_level: 'UG' },
+  // PG Programmes (Postgraduate)
+  { id: 'crs-mtech', department_id: 'dept-cse', code: 'MTECH', name: 'M.Tech', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-mca', department_id: 'dept-mca', code: 'MCA', name: 'MCA', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-mba', department_id: 'dept-mba', code: 'MBA', name: 'MBA', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-msc', department_id: 'dept-chem', code: 'MSC', name: 'M.Sc', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-mcom', department_id: 'dept-comm', code: 'MCOM', name: 'M.Com', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-ma', department_id: 'dept-eng', code: 'MA', name: 'M.A', duration_years: 2, program_level: 'PG' },
+  { id: 'crs-mpharm', department_id: 'dept-pharm', code: 'MPHARM', name: 'M.Pharmacy', duration_years: 2, program_level: 'PG' },
+  // Doctoral
+  { id: 'crs-phd', department_id: 'dept-cse', code: 'PHD', name: 'Ph.D', duration_years: 3, program_level: 'PhD' }
+];
 
 export const StudentsPage: React.FC = () => {
   const { user } = useAuth();
@@ -71,6 +92,7 @@ export const StudentsPage: React.FC = () => {
     { id: 'dept-eee', code: 'EEE', name: 'Electrical & Electronics Engineering' },
     { id: 'dept-it', code: 'IT', name: 'Information Technology' },
     { id: 'dept-aids', code: 'AI-DS', name: 'Artificial Intelligence & Data Science' },
+    { id: 'dept-mca', code: 'MCA', name: 'Master of Computer Applications' },
     { id: 'dept-mba', code: 'MBA', name: 'Department of Management Studies' },
     { id: 'dept-comm', code: 'COMM', name: 'Commerce & Accountancy' },
     { id: 'dept-chem', code: 'CHEM', name: 'Chemistry' },
@@ -81,21 +103,13 @@ export const StudentsPage: React.FC = () => {
     { id: 'dept-eng', code: 'ENG', name: 'English & Humanities' },
     { id: 'dept-econ', code: 'ECON', name: 'Economics' }
   ]);
-  const [courses, setCourses] = useState<AcademicCourse[]>([
-    { id: 'crs-btech-cse', department_id: 'dept-cse', code: 'BTECH', name: 'B.Tech', duration_years: 4 },
-    { id: 'crs-mtech-cse', department_id: 'dept-cse', code: 'MTECH', name: 'M.Tech', duration_years: 2 },
-    { id: 'crs-mba', department_id: 'dept-mba', code: 'MBA', name: 'MBA', duration_years: 2 },
-    { id: 'crs-mca', department_id: 'dept-cse', code: 'MCA', name: 'MCA', duration_years: 2 },
-    { id: 'crs-bsc', department_id: 'dept-cse', code: 'BSC', name: 'B.Sc', duration_years: 3 },
-    { id: 'crs-msc', department_id: 'dept-cse', code: 'MSC', name: 'M.Sc', duration_years: 2 },
-    { id: 'crs-bcom', department_id: 'dept-mba', code: 'BCOM', name: 'B.Com', duration_years: 3 },
-    { id: 'crs-ba', department_id: 'dept-mba', code: 'BA', name: 'B.A', duration_years: 3 },
-    { id: 'crs-phd', department_id: 'dept-cse', code: 'PHD', name: 'Ph.D', duration_years: 3 }
-  ]);
+  const [courses, setCourses] = useState<AcademicCourse[]>(DEFAULT_COURSES);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [hostelFilter, setHostelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [programLevelFilter, setProgramLevelFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -122,6 +136,7 @@ export const StudentsPage: React.FC = () => {
     phone: '',
     email: '',
     gender: 'male',
+    programLevel: 'UG' as 'UG' | 'PG' | 'PhD',
     departmentId: '',
     courseId: '',
     yearOfStudy: 1,
@@ -143,8 +158,9 @@ export const StudentsPage: React.FC = () => {
     gender: defaultGender,
     email: '',
     phone: '',
+    programLevel: 'UG' as 'UG' | 'PG' | 'PhD',
     departmentId: 'dept-cse',
-    courseId: 'crs-btech-cse',
+    courseId: 'crs-btech',
     hostelId: '',
     yearOfStudy: 1,
     currentSemester: 1,
@@ -339,11 +355,11 @@ export const StudentsPage: React.FC = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, hostelFilter, statusFilter]);
+  }, [search, hostelFilter, statusFilter, programLevelFilter, courseFilter]);
 
   useEffect(() => {
     fetchStudents();
-  }, [search, hostelFilter, statusFilter, currentPage, pageSize]);
+  }, [search, hostelFilter, statusFilter, programLevelFilter, courseFilter, currentPage, pageSize]);
 
   const fetchStudents = async () => {
     try {
@@ -352,6 +368,8 @@ export const StudentsPage: React.FC = () => {
       if (search) params.append('search', search);
       if (hostelFilter) params.append('hostelId', hostelFilter);
       if (statusFilter) params.append('status', statusFilter);
+      if (programLevelFilter) params.append('programLevel', programLevelFilter);
+      if (courseFilter) params.append('courseId', courseFilter);
       params.append('page', String(currentPage));
       params.append('limit', String(pageSize));
 
@@ -410,8 +428,9 @@ export const StudentsPage: React.FC = () => {
           gender: defaultGender,
           email: '',
           phone: '',
+          programLevel: 'UG',
           departmentId: departments[0]?.id || 'dept-cse',
-          courseId: courses[0]?.id || 'crs-btech-cse',
+          courseId: courses[0]?.id || 'crs-btech',
           hostelId: matchHostel,
           yearOfStudy: 1,
           currentSemester: 1,
@@ -450,11 +469,14 @@ export const StudentsPage: React.FC = () => {
 
   const handleOpenEdit = (stu: StudentProfile) => {
     setEditingStudent(stu);
+    const matchedCourse = courses.find((c) => c.id === stu.course_id);
+    const resolvedLevel = stu.program_level || matchedCourse?.program_level || 'UG';
     setEditForm({
       fullName: stu.full_name || '',
       phone: stu.phone || '',
       email: stu.email || '',
       gender: stu.gender || 'male',
+      programLevel: resolvedLevel,
       departmentId: stu.department_id || departments[0]?.id || '',
       courseId: stu.course_id || courses[0]?.id || '',
       yearOfStudy: stu.year_of_study || 1,
@@ -550,39 +572,71 @@ export const StudentsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards (Strict Wing Isolation) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-2.5">
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
-          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Total Residents</span>
+          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">
+            {user?.assignedCategory === 'boys' ? "Boys Residents" : user?.assignedCategory === 'girls' ? "Girls Residents" : "Total Residents"}
+          </span>
           <span className="text-2xl font-black text-[#23395D] mt-1 block">{stats.total}</span>
           <span className="text-[10px] text-emerald-700 font-semibold mt-1 block">Active on Campus</span>
         </div>
 
-        <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
-          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Boys Hostels</span>
-          <span className="text-2xl font-black text-[#23395D] mt-1 block">
-            {stats.totalBoys}
-          </span>
-          <span
-            className="text-[10px] text-blue-700 font-semibold mt-1 block truncate"
-            title={boysHostels.map((h) => h.name).join(', ')}
-          >
-            {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
-          </span>
-        </div>
+        {user?.assignedCategory === 'boys' ? (
+          <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
+            <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Boys Hostels</span>
+            <span className="text-2xl font-black text-[#23395D] mt-1 block">
+              {stats.totalBoys}
+            </span>
+            <span
+              className="text-[10px] text-blue-700 font-semibold mt-1 block truncate"
+              title={boysHostels.map((h) => h.name).join(', ')}
+            >
+              {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
+            </span>
+          </div>
+        ) : user?.assignedCategory === 'girls' ? (
+          <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
+            <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Girls Hostels</span>
+            <span className="text-2xl font-black text-[#23395D] mt-1 block">
+              {stats.totalGirls}
+            </span>
+            <span
+              className="text-[10px] text-rose-700 font-semibold mt-1 block truncate"
+              title={girlsHostels.map((h) => h.name).join(', ')}
+            >
+              {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
+              <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Boys Hostels</span>
+              <span className="text-2xl font-black text-[#23395D] mt-1 block">
+                {stats.totalBoys}
+              </span>
+              <span
+                className="text-[10px] text-blue-700 font-semibold mt-1 block truncate"
+                title={boysHostels.map((h) => h.name).join(', ')}
+              >
+                {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
+              </span>
+            </div>
 
-        <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
-          <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Girls Hostels</span>
-          <span className="text-2xl font-black text-[#23395D] mt-1 block">
-            {stats.totalGirls}
-          </span>
-          <span
-            className="text-[10px] text-rose-700 font-semibold mt-1 block truncate"
-            title={girlsHostels.map((h) => h.name).join(', ')}
-          >
-            {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
-          </span>
-        </div>
+            <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
+              <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Girls Hostels</span>
+              <span className="text-2xl font-black text-[#23395D] mt-1 block">
+                {stats.totalGirls}
+              </span>
+              <span
+                className="text-[10px] text-rose-700 font-semibold mt-1 block truncate"
+                title={girlsHostels.map((h) => h.name).join(', ')}
+              >
+                {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
+              </span>
+            </div>
+          </>
+        )}
 
         <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
           <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Mess Active</span>
@@ -591,11 +645,23 @@ export const StudentsPage: React.FC = () => {
           </span>
           <span className="text-[10px] text-[#92582F] font-semibold mt-1 block">QR Verified Diners</span>
         </div>
+
+        {user?.assignedCategory && user.assignedCategory !== 'all' && (
+          <div className="bg-white rounded-lg p-3 sm:p-3.5 border border-slate-200 shadow-2xs">
+            <span className="text-xs text-slate-500 font-bold block uppercase tracking-wider">Wing Buildings</span>
+            <span className="text-2xl font-black text-[#23395D] mt-1 block">
+              {hostels.length}
+            </span>
+            <span className="text-[10px] text-slate-500 font-semibold mt-1 block">
+              {user.assignedCategory === 'boys' ? "Boys Hostels Registered" : "Girls Hostels Registered"}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Filters and Search Bar */}
-      <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-2xs flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="w-full sm:w-80">
+      <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-2xs flex flex-col lg:flex-row gap-3 items-center justify-between">
+        <div className="w-full lg:w-72">
           <Input
             placeholder="Search by Name, Roll No, Reg No..."
             value={search}
@@ -604,14 +670,45 @@ export const StudentsPage: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          {/* Program Level Filter */}
+          <Select
+            value={programLevelFilter}
+            onChange={(e) => {
+              setProgramLevelFilter(e.target.value);
+              setCourseFilter('');
+            }}
+            containerClassName="w-36"
+          >
+            <option value="">All Levels (UG/PG/PhD)</option>
+            <option value="UG">UG (Undergrad)</option>
+            <option value="PG">PG (Postgrad)</option>
+            <option value="PhD">Ph.D (Doctoral)</option>
+          </Select>
+
+          {/* Degree Filter */}
+          <Select
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+            containerClassName="w-36"
+          >
+            <option value="">All Degrees</option>
+            {courses
+              .filter((c) => !programLevelFilter || (c.program_level || 'UG') === programLevelFilter)
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+          </Select>
+
           <Select
             value={hostelFilter}
             onChange={(e) => setHostelFilter(e.target.value)}
-            containerClassName="w-56"
+            containerClassName="w-44"
           >
-            <option value="">All Students (All Wings & Unassigned)</option>
-            <option value="unassigned">⏳ Unassigned to Bed / Room</option>
+            <option value="">All Hostels & Wings</option>
+            <option value="unassigned">⏳ Unassigned to Bed</option>
             {hostels.map((h) => (
               <option key={h.id} value={h.id}>
                 {h.name} ({h.code})
@@ -622,7 +719,7 @@ export const StudentsPage: React.FC = () => {
           <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            containerClassName="w-36"
+            containerClassName="w-32"
           >
             <option value="">All Statuses</option>
             <option value="active">Active</option>
@@ -637,17 +734,20 @@ export const StudentsPage: React.FC = () => {
           <tr>
             <TableHead className="whitespace-nowrap">Student Details</TableHead>
             <TableHead className="whitespace-nowrap">Roll No</TableHead>
-            <TableHead className="whitespace-nowrap">Course & Program</TableHead>
+            <TableHead className="whitespace-nowrap">Level</TableHead>
+            <TableHead className="whitespace-nowrap">Degree / Course</TableHead>
+            <TableHead className="whitespace-nowrap">Branch / Specialization</TableHead>
+            <TableHead className="whitespace-nowrap">Year & Sem</TableHead>
             <TableHead className="whitespace-nowrap">Hostel & Room</TableHead>
-            <TableHead className="whitespace-nowrap">Mess Dining Status</TableHead>
+            <TableHead className="whitespace-nowrap">Mess Dining</TableHead>
             <TableHead align="right" className="whitespace-nowrap">Credentials & Actions</TableHead>
           </tr>
         </TableHeader>
         <TableBody>
           {loading ? (
-            <TableLoading colSpan={6} message="Loading university student records..." />
+            <TableLoading colSpan={9} message="Loading university student records..." />
           ) : students.length === 0 ? (
-            <TableEmpty colSpan={6} message="No matching student records found." />
+            <TableEmpty colSpan={9} message="No matching student records found." />
           ) : (
             students.map((stu) => (
               <TableRow key={stu.id}>
@@ -660,20 +760,44 @@ export const StudentsPage: React.FC = () => {
 
                 <TableCell className="whitespace-nowrap">
                   <span className="font-mono font-bold text-aknu-blue block whitespace-nowrap">{stu.roll_number}</span>
+                  <span className="text-[10px] font-mono text-slate-400 block whitespace-nowrap">{stu.reg_number}</span>
                 </TableCell>
 
                 <TableCell className="whitespace-nowrap">
-                  <span className="font-semibold text-slate-800 block whitespace-nowrap">
-                    {stu.course_name || 'B.Tech Program'}
-                  </span>
-                  <span className="text-[11px] text-[#92582F] font-bold block whitespace-nowrap">
-                    Year {stu.year_of_study || Math.ceil((stu.current_semester || 1) / 2)} • Sem {stu.current_semester || 1}
-                  </span>
-                  {stu.department_name && (
-                    <span className="text-[10px] text-slate-400 block whitespace-nowrap">
-                      {stu.department_name}
+                  {stu.program_level === 'PG' ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs">
+                      PG
+                    </span>
+                  ) : stu.program_level === 'PhD' ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">
+                      Ph.D
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+                      UG
                     </span>
                   )}
+                </TableCell>
+
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-bold text-slate-800 block text-sm whitespace-nowrap">
+                    {stu.course_name || 'B.Tech'}
+                  </span>
+                </TableCell>
+
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-medium text-slate-700 block text-xs whitespace-nowrap">
+                    {stu.department_name || 'General Engineering'}
+                  </span>
+                </TableCell>
+
+                <TableCell className="whitespace-nowrap">
+                  <span className="font-bold text-[#92582F] block text-xs whitespace-nowrap">
+                    Year {stu.year_of_study || Math.ceil((stu.current_semester || 1) / 2)}
+                  </span>
+                  <span className="text-[11px] text-slate-500 block whitespace-nowrap">
+                    Semester {stu.current_semester || 1}
+                  </span>
                 </TableCell>
 
                 <TableCell className="whitespace-nowrap">
@@ -876,12 +1000,30 @@ export const StudentsPage: React.FC = () => {
                   Academic Information
                 </span>
                 <div className="space-y-1.5">
-                  <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Program / Degree:</span>
-                    <span className="font-bold text-slate-800">{viewingStudent.course_name || 'B.Tech Program'}</span>
+                  <div className="flex justify-between py-1 border-b border-slate-100 items-center">
+                    <span className="text-slate-500">Program Level:</span>
+                    <span className="font-bold">
+                      {viewingStudent.program_level === 'PG' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200">
+                          PG (Postgraduate)
+                        </span>
+                      ) : viewingStudent.program_level === 'PhD' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
+                          Ph.D (Doctoral)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+                          UG (Undergraduate)
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Department:</span>
+                    <span className="text-slate-500">Degree / Course:</span>
+                    <span className="font-bold text-slate-800">{viewingStudent.course_name || 'B.Tech'}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-100">
+                    <span className="text-slate-500">Branch / Specialization:</span>
                     <span className="font-semibold text-slate-800">{viewingStudent.department_name || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-100">
@@ -1038,44 +1180,94 @@ export const StudentsPage: React.FC = () => {
       >
         <form onSubmit={handleCreateStudent} className="space-y-4">
           {/* 1. Academic & Hostel Details Section */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-4 space-y-3">
+          <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-4 space-y-3.5">
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#92582F] flex items-center gap-1.5">
               <GraduationCap className="w-4 h-4 text-[#92582F]" />
               Academic Program & Hostel Placement
             </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Course Dropdown (First) */}
-              <SearchableCreatableSelect
-                label="Course"
-                required
-                placeholder="Select or search course (e.g. B.Tech, M.Tech, MBA)..."
-                searchPlaceholder="Search or type new course name..."
-                createPromptPrefix="Create course"
-                options={courses.map((c) => ({
-                  value: c.id,
-                  label: c.name
-                }))}
-                value={newStudent.courseId}
-                onChange={(newCourseId) => {
-                  setNewStudent((prev) => ({ ...prev, courseId: newCourseId }));
-                  syncRegNumber(newStudent.hostelId, newCourseId, newStudent.departmentId, newStudent.gender);
-                }}
-                onCreateOption={async (name) => {
-                  const created = await handleCreateCourse(name);
-                  if (created?.value) {
-                    syncRegNumber(newStudent.hostelId, created.value, newStudent.departmentId, newStudent.gender);
-                  }
-                  return created;
-                }}
-              />
 
-              {/* Department Dropdown (Second, unmapped) */}
+            {/* Step 1: Program Level Tabs */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 tracking-wide mb-1.5">
+                Program Level <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['UG', 'PG', 'PhD'] as const).map((lvl) => {
+                  const isSelected = newStudent.programLevel === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => {
+                        const matchingCourses = courses.filter((c) => (c.program_level || 'UG') === lvl);
+                        const firstCourse = matchingCourses[0] || courses[0];
+                        setNewStudent((prev) => ({
+                          ...prev,
+                          programLevel: lvl,
+                          courseId: firstCourse?.id || prev.courseId,
+                          yearOfStudy: 1,
+                          currentSemester: 1
+                        }));
+                        syncRegNumber(newStudent.hostelId, firstCourse?.id || newStudent.courseId, newStudent.departmentId, newStudent.gender);
+                      }}
+                      className={`px-3 py-2.5 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                        isSelected
+                          ? lvl === 'UG'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : lvl === 'PG'
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:border-slate-400'
+                      }`}
+                    >
+                      <span>
+                        {lvl === 'UG' ? 'UG (Undergraduate)' : lvl === 'PG' ? 'PG (Postgraduate)' : 'Ph.D (Doctoral)'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Step 2: Course / Degree (Filtered by selected program level) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 tracking-wide mb-1">
+                  Degree / Course <span className="text-rose-500">*</span>
+                </label>
+                <Select
+                  required
+                  value={newStudent.courseId}
+                  onChange={(e) => {
+                    const newCourseId = e.target.value;
+                    const cObj = courses.find((c) => c.id === newCourseId);
+                    const maxDur = cObj?.duration_years || (newStudent.programLevel === 'UG' ? 4 : 2);
+                    setNewStudent((prev) => ({
+                      ...prev,
+                      courseId: newCourseId,
+                      yearOfStudy: Math.min(prev.yearOfStudy, maxDur),
+                      currentSemester: Math.min(prev.currentSemester, maxDur * 2)
+                    }));
+                    syncRegNumber(newStudent.hostelId, newCourseId, newStudent.departmentId, newStudent.gender);
+                  }}
+                >
+                  {courses
+                    .filter((c) => (c.program_level || 'UG') === newStudent.programLevel)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.duration_years} Years)
+                      </option>
+                    ))}
+                </Select>
+              </div>
+
+              {/* Step 3: Department / Branch */}
               <SearchableCreatableSelect
-                label="Department"
+                label="Branch / Department"
                 required
                 placeholder="Select or search department..."
-                searchPlaceholder="Search or type new department..."
-                createPromptPrefix="Create department"
+                searchPlaceholder="Search or type new branch..."
+                createPromptPrefix="Create branch"
                 options={departments.map((d) => ({
                   value: d.id,
                   label: `${d.code} — ${d.name}`,
@@ -1096,10 +1288,10 @@ export const StudentsPage: React.FC = () => {
                 }}
               />
 
-              {/* Hostel Assignment (Third) */}
+              {/* Step 4: Hostel Assignment */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 tracking-wide mb-1">
-                  Hostel <span className="text-rose-500">*</span>
+                  Hostel Placement <span className="text-rose-500">*</span>
                 </label>
                 {hostels.filter((h) => newStudent.gender === 'male' ? h.category === 'boys' : h.category === 'girls').length === 0 ? (
                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-xs flex items-center justify-between">
@@ -1134,56 +1326,68 @@ export const StudentsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Year of Study */}
-              <Select
-                label="Year of Study"
-                value={newStudent.yearOfStudy}
-                onChange={(e) => {
-                  const y = parseInt(e.target.value) || 1;
-                  setNewStudent({
-                    ...newStudent,
-                    yearOfStudy: y,
-                    currentSemester: Math.max(1, y * 2 - 1)
-                  });
-                }}
-              >
-                <option value={1}>1st Year (Junior)</option>
-                <option value={2}>2nd Year (Sophomore)</option>
-                <option value={3}>3rd Year (Pre-final)</option>
-                <option value={4}>4th Year (Final)</option>
-              </Select>
+              {/* Step 5: Year of Study (Dynamic based on selected degree duration) */}
+              {(() => {
+                const selectedCourse = courses.find((c) => c.id === newStudent.courseId);
+                const maxYears = selectedCourse?.duration_years || (newStudent.programLevel === 'UG' ? 4 : 2);
+                const yearOptions = Array.from({ length: maxYears }, (_, i) => i + 1);
 
-              {/* Current Semester */}
-              <Input
-                label="Current Semester"
-                required
-                type="number"
-                min={1}
-                max={8}
-                value={newStudent.currentSemester}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val === '') {
-                    setNewStudent((prev) => ({ ...prev, currentSemester: '' as any }));
-                    return;
-                  }
-                  const sem = Math.max(1, Math.min(8, parseInt(val, 10) || 1));
-                  setNewStudent((prev) => ({
-                    ...prev,
-                    currentSemester: sem,
-                    yearOfStudy: Math.ceil(sem / 2)
-                  }));
-                }}
-                onBlur={() => {
-                  const s = parseInt(String(newStudent.currentSemester), 10);
-                  const sem = isNaN(s) || s < 1 ? 1 : Math.min(8, s);
-                  setNewStudent((prev) => ({
-                    ...prev,
-                    currentSemester: sem,
-                    yearOfStudy: Math.ceil(sem / 2)
-                  }));
-                }}
-              />
+                return (
+                  <Select
+                    label="Year of Study"
+                    value={newStudent.yearOfStudy}
+                    onChange={(e) => {
+                      const y = parseInt(e.target.value) || 1;
+                      setNewStudent({
+                        ...newStudent,
+                        yearOfStudy: y,
+                        currentSemester: Math.max(1, y * 2 - 1)
+                      });
+                    }}
+                  >
+                    {yearOptions.map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr === 1
+                          ? '1st Year (Fresher / Junior)'
+                          : yr === 2
+                          ? '2nd Year (Sophomore)'
+                          : yr === 3
+                          ? '3rd Year (Pre-final)'
+                          : `${yr}th Year (Final)`}
+                      </option>
+                    ))}
+                  </Select>
+                );
+              })()}
+
+              {/* Step 6: Current Semester */}
+              {(() => {
+                const selectedCourse = courses.find((c) => c.id === newStudent.courseId);
+                const maxYears = selectedCourse?.duration_years || (newStudent.programLevel === 'UG' ? 4 : 2);
+                const totalSemesters = maxYears * 2;
+                const semOptions = Array.from({ length: totalSemesters }, (_, i) => i + 1);
+
+                return (
+                  <Select
+                    label="Current Semester"
+                    value={newStudent.currentSemester}
+                    onChange={(e) => {
+                      const s = parseInt(e.target.value) || 1;
+                      setNewStudent({
+                        ...newStudent,
+                        currentSemester: s,
+                        yearOfStudy: Math.ceil(s / 2)
+                      });
+                    }}
+                  >
+                    {semOptions.map((s) => (
+                      <option key={s} value={s}>
+                        Semester {s} (Year {Math.ceil(s / 2)})
+                      </option>
+                    ))}
+                  </Select>
+                );
+              })()}
             </div>
           </div>
 
@@ -1278,10 +1482,10 @@ export const StudentsPage: React.FC = () => {
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
-                label="Email"
+                label="Email Address (Gmail / University Email)"
                 required
                 type="email"
-                placeholder="student@aknu.edu.in"
+                placeholder="e.g. student@gmail.com or roll@aknu.edu.in"
                 value={newStudent.email}
                 onChange={(e) => setNewStudent({ ...newStudent, email: e.target.value })}
               />
@@ -1377,8 +1581,8 @@ export const StudentsPage: React.FC = () => {
             <Input
               required
               type="email"
-              label="University Email *"
-              placeholder="saiteja@aknu.edu.in"
+              label="Email Address (Gmail / University Email) *"
+              placeholder="e.g. student@gmail.com or saiteja@aknu.edu.in"
               value={editForm.email}
               onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
             />
@@ -1394,58 +1598,149 @@ export const StudentsPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Department *"
-              value={editForm.departmentId}
-              onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value })}
-            >
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} ({d.code})
-                </option>
-              ))}
-            </Select>
+          {/* Academic Hierarchy: Program Level -> Course -> Department -> Year */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-lg p-3.5 space-y-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#92582F] flex items-center gap-1.5">
+              <GraduationCap className="w-4 h-4 text-[#92582F]" />
+              Academic Program & Hierarchy
+            </span>
 
-            <Select
-              label="Course / Degree *"
-              value={editForm.courseId}
-              onChange={(e) => setEditForm({ ...editForm, courseId: e.target.value })}
-            >
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code})
-                </option>
-              ))}
-            </Select>
-          </div>
+            {/* Program Level Tabs */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 tracking-wide mb-1.5">
+                Program Level <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['UG', 'PG', 'PhD'] as const).map((lvl) => {
+                  const isSelected = editForm.programLevel === lvl;
+                  return (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => {
+                        const matching = courses.filter((c) => (c.program_level || 'UG') === lvl);
+                        const first = matching[0] || courses[0];
+                        setEditForm((prev) => ({
+                          ...prev,
+                          programLevel: lvl,
+                          courseId: first?.id || prev.courseId,
+                          yearOfStudy: 1,
+                          currentSemester: 1
+                        }));
+                      }}
+                      className={`px-3 py-2 rounded-lg text-xs font-bold border transition flex items-center justify-center gap-1.5 ${
+                        isSelected
+                          ? lvl === 'UG'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : lvl === 'PG'
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>
+                        {lvl === 'UG' ? 'UG (Undergraduate)' : lvl === 'PG' ? 'PG (Postgraduate)' : 'Ph.D (Doctoral)'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Select
-              label="Year of Study *"
-              value={editForm.yearOfStudy}
-              onChange={(e) => {
-                const yr = parseInt(e.target.value) || 1;
-                setEditForm({ ...editForm, yearOfStudy: yr, currentSemester: yr * 2 - 1 });
-              }}
-            >
-              <option value={1}>1st Year (Fresher)</option>
-              <option value={2}>2nd Year</option>
-              <option value={3}>3rd Year</option>
-              <option value={4}>4th Year (Final)</option>
-            </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 tracking-wide mb-1">
+                  Degree / Course <span className="text-rose-500">*</span>
+                </label>
+                <Select
+                  required
+                  value={editForm.courseId}
+                  onChange={(e) => {
+                    const newCourseId = e.target.value;
+                    const cObj = courses.find((c) => c.id === newCourseId);
+                    const maxDur = cObj?.duration_years || (editForm.programLevel === 'UG' ? 4 : 2);
+                    setEditForm((prev) => ({
+                      ...prev,
+                      courseId: newCourseId,
+                      yearOfStudy: Math.min(prev.yearOfStudy, maxDur),
+                      currentSemester: Math.min(prev.currentSemester, maxDur * 2)
+                    }));
+                  }}
+                >
+                  {courses
+                    .filter((c) => (c.program_level || 'UG') === editForm.programLevel)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.duration_years} Years)
+                      </option>
+                    ))}
+                </Select>
+              </div>
 
-            <Select
-              label="Current Semester *"
-              value={editForm.currentSemester}
-              onChange={(e) => setEditForm({ ...editForm, currentSemester: parseInt(e.target.value) || 1 })}
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                <option key={s} value={s}>
-                  Semester {s}
-                </option>
-              ))}
-            </Select>
+              <Select
+                label="Branch / Department *"
+                value={editForm.departmentId}
+                onChange={(e) => setEditForm({ ...editForm, departmentId: e.target.value })}
+              >
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.code} — {d.name}
+                  </option>
+                ))}
+              </Select>
+
+              {/* Dynamic Year of Study */}
+              {(() => {
+                const selectedCourse = courses.find((c) => c.id === editForm.courseId);
+                const maxYears = selectedCourse?.duration_years || (editForm.programLevel === 'UG' ? 4 : 2);
+                const yearOptions = Array.from({ length: maxYears }, (_, i) => i + 1);
+
+                return (
+                  <Select
+                    label="Year of Study *"
+                    value={editForm.yearOfStudy}
+                    onChange={(e) => {
+                      const yr = parseInt(e.target.value) || 1;
+                      setEditForm({ ...editForm, yearOfStudy: yr, currentSemester: yr * 2 - 1 });
+                    }}
+                  >
+                    {yearOptions.map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr === 1
+                          ? '1st Year'
+                          : yr === 2
+                          ? '2nd Year'
+                          : yr === 3
+                          ? '3rd Year'
+                          : `${yr}th Year`}
+                      </option>
+                    ))}
+                  </Select>
+                );
+              })()}
+
+              {/* Dynamic Semester */}
+              {(() => {
+                const selectedCourse = courses.find((c) => c.id === editForm.courseId);
+                const maxYears = selectedCourse?.duration_years || (editForm.programLevel === 'UG' ? 4 : 2);
+                const totalSemesters = maxYears * 2;
+                const semOptions = Array.from({ length: totalSemesters }, (_, i) => i + 1);
+
+                return (
+                  <Select
+                    label="Current Semester *"
+                    value={editForm.currentSemester}
+                    onChange={(e) => setEditForm({ ...editForm, currentSemester: parseInt(e.target.value) || 1 })}
+                  >
+                    {semOptions.map((s) => (
+                      <option key={s} value={s}>
+                        Semester {s} (Year {Math.ceil(s / 2)})
+                      </option>
+                    ))}
+                  </Select>
+                );
+              })()}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

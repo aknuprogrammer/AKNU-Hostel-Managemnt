@@ -8,125 +8,137 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
   const today = new Date().toISOString().split('T')[0];
 
   try {
-    const isScoped = req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0;
-    const assignedHostels = req.user?.assignedHostels || [];
-    const placeholders = assignedHostels.map((_, i) => `$${i + 1}`).join(',');
-    const gender = req.user?.assignedCategory === 'girls' ? 'female' : (req.user?.assignedCategory === 'boys' ? 'male' : null);
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing: 'boys' | 'girls' | null = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const studentGender = wing === 'girls' ? 'female' : (wing === 'boys' ? 'male' : null);
 
-    let studentCountQuery = 'SELECT COUNT(DISTINCT s.id) as c FROM students s WHERE s.hostel_status = \'active\'';
-    let studentCountParams: any[] = [];
-    if (isScoped) {
-      if (gender) {
-        studentCountQuery = `
-          SELECT COUNT(DISTINCT s.id) as c 
-          FROM students s 
-          LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
-          WHERE s.hostel_status = 'active' AND (sa.hostel_id IN (${placeholders}) OR (sa.hostel_id IS NULL AND s.gender = '${gender}'))
-        `;
-      } else {
-        studentCountQuery = `
-          SELECT COUNT(DISTINCT s.id) as c 
-          FROM students s 
-          JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
-          WHERE s.hostel_status = 'active' AND sa.hostel_id IN (${placeholders})
-        `;
-      }
-      studentCountParams = [...assignedHostels];
+    // 1. Student Count
+    let studentCountQuery = `
+      SELECT COUNT(DISTINCT s.id) as c 
+      FROM students s 
+      LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+      LEFT JOIN hostels h ON sa.hostel_id = h.id
+      WHERE s.hostel_status = 'active'
+    `;
+    const studentCountParams: any[] = [];
+    if (wing) {
+      studentCountQuery += ` AND (h.category = $1 OR (sa.hostel_id IS NULL AND s.gender = $2))`;
+      studentCountParams.push(wing, studentGender);
     }
-    const studentCount = parseInt((await executeQuery(studentCountQuery, studentCountParams)).rows[0].c);
+    const studentCount = parseInt((await executeQuery(studentCountQuery, studentCountParams)).rows[0]?.c || '0');
 
+    // 2. Hostel Count
     let hostelCountQuery = 'SELECT COUNT(*) as c FROM hostels';
-    let hostelCountParams: any[] = [];
-    if (isScoped) {
-      hostelCountQuery = `SELECT COUNT(*) as c FROM hostels WHERE id IN (${placeholders})`;
-      hostelCountParams = [...assignedHostels];
+    const hostelCountParams: any[] = [];
+    if (wing) {
+      hostelCountQuery += ' WHERE category = $1';
+      hostelCountParams.push(wing);
     }
-    const hostelCount = parseInt((await executeQuery(hostelCountQuery, hostelCountParams)).rows[0].c);
+    const hostelCount = parseInt((await executeQuery(hostelCountQuery, hostelCountParams)).rows[0]?.c || '0');
 
+    // 3. Bed Stats
     let bedStatsQuery = `
-      SELECT COUNT(*) as total_beds,
+      SELECT COUNT(b.id) as total_beds,
              COUNT(CASE WHEN b.status = 'occupied' THEN 1 END) as occupied_beds,
              COUNT(CASE WHEN b.status = 'vacant' THEN 1 END) as vacant_beds
       FROM beds b
       JOIN rooms r ON b.room_id = r.id
+      JOIN hostels h ON r.hostel_id = h.id
     `;
-    let bedStatsParams: any[] = [];
-    if (isScoped) {
-      bedStatsQuery += ` WHERE r.hostel_id IN (${placeholders})`;
-      bedStatsParams = [...assignedHostels];
+    const bedStatsParams: any[] = [];
+    if (wing) {
+      bedStatsQuery += ' WHERE h.category = $1';
+      bedStatsParams.push(wing);
     }
-    const bedStats = (await executeQuery(bedStatsQuery, bedStatsParams)).rows[0];
+    const bedStats = (await executeQuery(bedStatsQuery, bedStatsParams)).rows[0] || {
+      total_beds: 0,
+      occupied_beds: 0,
+      vacant_beds: 0
+    };
 
-    let todayMealsQuery = 'SELECT COUNT(*) as c FROM meal_transactions WHERE service_date = $1 AND status = \'SUCCESS\'';
-    let todayMealsParams: any[] = [today];
-    if (isScoped) {
-      const mealPlaceholders = assignedHostels.map((_, i) => `$${i + 2}`).join(',');
-      todayMealsQuery += ` AND hostel_id IN (${mealPlaceholders})`;
-      todayMealsParams.push(...assignedHostels);
+    // 4. Today's Meals Count
+    let todayMealsQuery = `
+      SELECT COUNT(mt.id) as c 
+      FROM meal_transactions mt 
+      JOIN hostels h ON mt.hostel_id = h.id
+      WHERE mt.service_date = $1 AND mt.status = 'SUCCESS'
+    `;
+    const todayMealsParams: any[] = [today];
+    if (wing) {
+      todayMealsQuery += ' AND h.category = $2';
+      todayMealsParams.push(wing);
     }
-    const todayMeals = parseInt((await executeQuery(todayMealsQuery, todayMealsParams)).rows[0].c);
+    const todayMeals = parseInt((await executeQuery(todayMealsQuery, todayMealsParams)).rows[0]?.c || '0');
 
-    let complaintsQuery = 'SELECT COUNT(*) as c FROM complaints WHERE status NOT IN (\'resolved\', \'closed\')';
-    let complaintsParams: any[] = [];
-    if (isScoped) {
-      complaintsQuery += ` AND hostel_id IN (${placeholders})`;
-      complaintsParams = [...assignedHostels];
+    // 5. Active Complaints Count
+    let complaintsQuery = `
+      SELECT COUNT(c.id) as c 
+      FROM complaints c
+      JOIN hostels h ON c.hostel_id = h.id
+      WHERE c.status NOT IN ('resolved', 'closed')
+    `;
+    const complaintsParams: any[] = [];
+    if (wing) {
+      complaintsQuery += ' AND h.category = $1';
+      complaintsParams.push(wing);
     }
-    const activeComplaints = parseInt((await executeQuery(complaintsQuery, complaintsParams)).rows[0].c);
+    const activeComplaints = parseInt((await executeQuery(complaintsQuery, complaintsParams)).rows[0]?.c || '0');
 
+    // 6. Pending Leaves Count
     let leavesQuery = `
-      SELECT COUNT(*) as c 
+      SELECT COUNT(la.id) as c 
       FROM leave_applications la
       JOIN students s ON la.student_id = s.id
       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+      LEFT JOIN hostels h ON sa.hostel_id = h.id
       WHERE la.status = 'submitted'
     `;
-    let leavesParams: any[] = [];
-    if (isScoped) {
-      if (gender) {
-        leavesQuery += ` AND (sa.hostel_id IN (${placeholders}) OR (sa.hostel_id IS NULL AND s.gender = '${gender}'))`;
-      } else {
-        leavesQuery += ` AND sa.hostel_id IN (${placeholders})`;
-      }
-      leavesParams = [...assignedHostels];
+    const leavesParams: any[] = [];
+    if (wing) {
+      leavesQuery += ` AND (h.category = $1 OR (sa.hostel_id IS NULL AND s.gender = $2))`;
+      leavesParams.push(wing, studentGender);
     }
-    const pendingLeaves = parseInt((await executeQuery(leavesQuery, leavesParams)).rows[0].c);
+    const pendingLeaves = parseInt((await executeQuery(leavesQuery, leavesParams)).rows[0]?.c || '0');
 
+    // 7. Active Meal Session
     const activeSession = await getActiveMealSession();
 
-    // Announcements
+    // 8. Announcements
     const announcements = (await executeQuery('SELECT * FROM announcements ORDER BY created_at DESC LIMIT 5')).rows;
 
-    // Recent activity audit logs for admins
+    // 9. Recent Audits (Strict Wing Isolation)
     let recentAudits: any[] = [];
-    if (['super_admin', 'univ_mgmt', 'chief_warden', 'hostel_warden'].includes(role)) {
-      recentAudits = (await executeQuery(`
+    if (['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role)) {
+      let auditSql = `
         SELECT al.*, u.full_name as user_name
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.id
-        ORDER BY al.created_at DESC
-        LIMIT 8
-      `)).rows;
+      `;
+      const auditParams: any[] = [];
+      if (wing) {
+        auditSql += ` WHERE (u.gender_wing = $1 OR u.gender_wing = 'all' OR u.id = $2)`;
+        auditParams.push(wing, req.user?.id || 'none');
+      }
+      auditSql += ` ORDER BY al.created_at DESC LIMIT 8`;
+      recentAudits = (await executeQuery(auditSql, auditParams)).rows;
     }
 
-    // Dynamic Hostels List for Dashboard
+    // 10. Dynamic Hostels List for Dashboard (STRICT WING ISOLATION)
     let hostelsListQuery = `
       SELECT h.id, h.name, h.code, h.category, h.campus, h.total_capacity,
              COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id), 0) as total_beds,
              COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id AND b.status = 'occupied'), 0) as occupied_beds
       FROM hostels h
     `;
-    let hostelsListParams: any[] = [];
-    if (isScoped) {
-      hostelsListQuery += ` WHERE h.id IN (${placeholders})`;
-      hostelsListParams = [...assignedHostels];
-    } else if (gender) {
-      const allowedCat = req.user?.assignedCategory;
-      if (allowedCat === 'boys' || allowedCat === 'girls') {
-        hostelsListQuery += ` WHERE h.category = '${allowedCat}'`;
-      }
+    const hostelsListParams: any[] = [];
+    if (wing) {
+      hostelsListQuery += ` WHERE h.category = $1`;
+      hostelsListParams.push(wing);
     }
     hostelsListQuery += ` ORDER BY h.category ASC, h.name ASC`;
+
     const hostelsListResult = await executeQuery(hostelsListQuery, hostelsListParams);
     const hostelsList = hostelsListResult.rows.map((h: any) => ({
       ...h,
@@ -134,14 +146,17 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       occupied_beds: parseInt(h.occupied_beds) || 0
     }));
 
-    // Role-specific metrics
-    const stats: any = {
+    const totalBeds = parseInt(bedStats.total_beds) || 0;
+    const occupiedBeds = parseInt(bedStats.occupied_beds) || 0;
+    const vacantBeds = parseInt(bedStats.vacant_beds) || 0;
+
+    const stats = {
       totalStudents: studentCount,
       totalHostels: hostelCount,
-      totalBeds: parseInt(bedStats.total_beds) || 0,
-      occupiedBeds: parseInt(bedStats.occupied_beds) || 0,
-      vacantBeds: parseInt(bedStats.vacant_beds) || 0,
-      occupancyRate: bedStats.total_beds > 0 ? Math.round((bedStats.occupied_beds / bedStats.total_beds) * 100) : 0,
+      totalBeds,
+      occupiedBeds,
+      vacantBeds,
+      occupancyRate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
       todayMealsCount: todayMeals,
       activeComplaintsCount: activeComplaints,
       pendingLeavesCount: pendingLeaves,
@@ -149,11 +164,12 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       announcements,
       recentAudits,
       hostels: hostelsList,
-      assignedCategory: req.user?.assignedCategory || 'all'
+      assignedCategory: wing || 'all'
     };
 
     res.json({ success: true, data: stats });
   } catch (err: any) {
+    console.error('[Dashboard Stats Error]', err);
     res.status(500).json({ success: false, error: err.message });
   }
 }
@@ -171,4 +187,3 @@ export async function executeAdminQuery(req: AuthRequest, res: Response): Promis
     res.status(400).json({ success: false, error: err.message });
   }
 }
-

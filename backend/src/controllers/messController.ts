@@ -12,6 +12,20 @@ export async function getMessMenu(req: AuthRequest, res: Response): Promise<void
   }
 
   try {
+    // RBAC: Wing boundary restriction
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      const hCheck = await executeQuery('SELECT category FROM hostels WHERE id = $1', [hostelId]);
+      if (hCheck.rows.length === 0 || hCheck.rows[0].category !== wing) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot access mess menu of a hostel outside your assigned wing' });
+        return;
+      }
+    }
+
     let sql = `
       SELECT mm.*, ms.name as session_name, ms.code as session_code, ms.start_time, ms.end_time
       FROM mess_menus mm
@@ -91,6 +105,19 @@ export async function updateMessMenu(req: AuthRequest, res: Response): Promise<v
   }
 
   try {
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      const hCheck = await executeQuery('SELECT category FROM hostels WHERE id = $1', [hostelId]);
+      if (hCheck.rows.length === 0 || hCheck.rows[0].category !== wing) {
+        res.status(403).json({ success: false, error: 'Access denied: Cannot update mess menu of a hostel outside your assigned wing' });
+        return;
+      }
+    }
+
     const existing = await executeQuery(
       `SELECT id FROM mess_menus WHERE hostel_id = $1 AND day_of_week = $2 AND meal_session_id = $3`,
       [hostelId, dayOfWeek, mealSessionId]

@@ -7,7 +7,7 @@ import { AuthRequest, logAudit } from '../middleware/auth.js';
 import { generateQrSalt, signStudentQrToken, generateQrDataUri } from '../utils/qr.js';
 
 export async function getStudents(req: AuthRequest, res: Response): Promise<void> {
-  const { search, hostelId, departmentId, status, page = '1', limit = '10' } = req.query;
+  const { search, hostelId, departmentId, courseId, programLevel, status, page = '1', limit = '10' } = req.query;
   const isAll = String(limit).toLowerCase() === 'all' || parseInt(limit as string) === -1;
   const parsedLimit = isAll ? 100000 : (parseInt(limit as string) || 10);
   const parsedPage = isAll ? 1 : Math.max(1, parseInt(page as string) || 1);
@@ -40,23 +40,41 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
       pIdx++;
     }
 
+    if (courseId) {
+      whereClauses.push(`s.course_id = $${pIdx}`);
+      params.push(courseId);
+      pIdx++;
+    }
+
+    if (programLevel) {
+      whereClauses.push(`(s.program_level = $${pIdx} OR (s.program_level IS NULL AND c.program_level = $${pIdx}))`);
+      params.push(programLevel);
+      pIdx++;
+    }
+
     if (status) {
       whereClauses.push(`s.hostel_status = $${pIdx}`);
       params.push(status);
       pIdx++;
     }
 
-    // RBAC: if not super_admin and assigned hostels exist, restrict to assigned hostels and gender
-    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels?.length) {
-      const allowedPlaceholders = req.user.assignedHostels.map((_, i) => `$${pIdx + i}`).join(',');
-      params.push(...req.user.assignedHostels);
-      pIdx += req.user.assignedHostels.length;
+    // RBAC: Strict Gender Wing Isolation (Zero Cross-Wing Leakage)
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const wingGender = wing === 'girls' ? 'female' : (wing === 'boys' ? 'male' : null);
 
-      const gender = req.user.assignedCategory === 'girls' ? 'female' : (req.user.assignedCategory === 'boys' ? 'male' : null);
-      if (gender) {
-        whereClauses.push(`(sa.hostel_id IN (${allowedPlaceholders}) OR (sa.hostel_id IS NULL AND s.gender = '${gender}'))`);
+    if (wing) {
+      if (req.user?.assignedHostels?.length) {
+        const allowedPlaceholders = req.user.assignedHostels.map((_, i) => `$${pIdx + i}`).join(',');
+        params.push(...req.user.assignedHostels);
+        pIdx += req.user.assignedHostels.length;
+        whereClauses.push(`(sa.hostel_id IN (${allowedPlaceholders}) OR (sa.hostel_id IS NULL AND s.gender = '${wingGender}'))`);
       } else {
-        whereClauses.push(`sa.hostel_id IN (${allowedPlaceholders})`);
+        whereClauses.push(`(h.category = $${pIdx} OR (sa.hostel_id IS NULL AND s.gender = $${pIdx + 1}))`);
+        params.push(wing, wingGender);
+        pIdx += 2;
       }
     }
 
@@ -69,7 +87,9 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
          COUNT(DISTINCT CASE WHEN s.gender = 'female' THEN s.id END) as total_girls,
          COUNT(DISTINCT CASE WHEN s.mess_eligibility = true THEN s.id END) as total_mess_active
        FROM students s
+       LEFT JOIN courses c ON s.course_id = c.id
        LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
        WHERE ${whereSql}`,
       params
     );
@@ -81,7 +101,8 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
 
     const querySql = `
       SELECT s.*,
-             d.name as department_name, c.name as course_name,
+             COALESCE(s.program_level, c.program_level, 'UG') as program_level,
+             d.name as department_name, c.name as course_name, c.duration_years as course_duration,
              h.name as hostel_name, h.code as hostel_code,
              r.room_number, b.bed_number, sa.id as allocation_id
       FROM students s
@@ -126,7 +147,8 @@ export async function getStudentById(req: AuthRequest, res: Response): Promise<v
   try {
     const studentRes = await executeQuery(
       `SELECT s.*,
-              d.name as department_name, c.name as course_name,
+              COALESCE(s.program_level, c.program_level, 'UG') as program_level,
+              d.name as department_name, c.name as course_name, c.duration_years as course_duration,
               h.name as hostel_name, h.code as hostel_code, h.id as hostel_id,
               r.room_number, r.id as room_id, b.bed_number, b.id as bed_id,
               sa.id as allocation_id, sa.check_in_date
@@ -147,6 +169,18 @@ export async function getStudentById(req: AuthRequest, res: Response): Promise<v
     }
 
     const student = studentRes.rows[0];
+    
+    // RBAC: Wing boundary check
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const wingGender = wing === 'girls' ? 'female' : (wing === 'boys' ? 'male' : null);
+    if (wing && student.gender !== wingGender) {
+      res.status(403).json({ success: false, error: 'Access denied: Cannot access student belonging to a different gender wing' });
+      return;
+    }
+
     const qrDataUri = await generateQrDataUri(student.qr_credential_token);
 
     res.json({
@@ -164,7 +198,7 @@ export async function getStudentById(req: AuthRequest, res: Response): Promise<v
 export async function getAcademicStructure(req: AuthRequest, res: Response): Promise<void> {
   try {
     const departmentsRes = await executeQuery('SELECT id, code, name FROM departments ORDER BY name ASC');
-    const coursesRes = await executeQuery('SELECT id, department_id, code, name, duration_years FROM courses ORDER BY name ASC');
+    const coursesRes = await executeQuery('SELECT id, department_id, code, name, duration_years, COALESCE(program_level, \'UG\') as program_level FROM courses ORDER BY name ASC');
     const academicYearsRes = await executeQuery('SELECT id, name, is_current FROM academic_years ORDER BY start_date DESC');
 
     res.json({
@@ -407,7 +441,7 @@ export async function generateRegistrationNumberHandler(req: AuthRequest, res: R
 export async function createStudent(req: AuthRequest, res: Response): Promise<void> {
   const {
     rollNumber, regNumber, fullName, photoUrl, gender, dob,
-    departmentId, courseId, academicYearId, currentSemester, yearOfStudy,
+    departmentId, courseId, programLevel, academicYearId, currentSemester, yearOfStudy,
     phone, email, permanentAddress, guardianName, guardianPhone,
     emergencyContact, hostelId, roomId, bedId, messEligibility,
     mealEligibilityStart, mealEligibilityEnd, notes
@@ -417,6 +451,30 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
     res.status(400).json({ success: false, error: 'Missing mandatory fields (roll, name, phone, email, gender)' });
     return;
   }
+
+  // RBAC: Wing boundary restriction
+  const isSuperAdmin = req.user?.role === 'super_admin';
+  const staffWing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+    ? req.user.assignedCategory
+    : null;
+  const staffGender = staffWing === 'girls' ? 'female' : (staffWing === 'boys' ? 'male' : null);
+
+  if (staffWing && staffGender && gender !== staffGender) {
+    res.status(403).json({
+      success: false,
+      error: `Access Denied: ${staffWing.toUpperCase()} wing staff can only register ${staffGender} students.`
+    });
+    return;
+  }
+
+  let resolvedProgramLevel = programLevel;
+  if (!resolvedProgramLevel && courseId) {
+    const cRes = await executeQuery('SELECT program_level FROM courses WHERE id = $1', [courseId]);
+    if (cRes.rowCount && cRes.rows[0].program_level) {
+      resolvedProgramLevel = cRes.rows[0].program_level;
+    }
+  }
+  if (!resolvedProgramLevel) resolvedProgramLevel = 'UG';
 
   const computedYear = yearOfStudy ? parseInt(String(yearOfStudy)) : (currentSemester ? Math.ceil(parseInt(String(currentSemester)) / 2) : 1);
 
@@ -461,18 +519,18 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
       await query(
         `INSERT INTO students (
           id, student_id_code, roll_number, reg_number, full_name, photo_url, gender, dob,
-          department_id, course_id, academic_year_id, year_of_study, current_semester, phone, email,
+          department_id, course_id, program_level, academic_year_id, year_of_study, current_semester, phone, email,
           permanent_address, guardian_name, guardian_phone, emergency_contact, hostel_status,
           mess_eligibility, meal_eligibility_start, meal_eligibility_end,
           qr_credential_token, qr_salt, qr_status, user_id, notes
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, 'active', $20, $21, $22, $23, $24, 'active', $25, $26
+          $16, $17, $18, $19, $20, 'active', $21, $22, $23, $24, $25, 'active', $26, $27
         )`,
         [
           studentId, studentIdCode, rollNumber.trim().toUpperCase(), finalRegNumber,
           fullName.trim(), photoUrl || null, gender, dob || null,
-          departmentId || null, courseId || null, academicYearId || null, computedYear || 1, currentSemester || 1,
+          departmentId || null, courseId || null, resolvedProgramLevel, academicYearId || null, computedYear || 1, currentSemester || 1,
           phone.trim(), email.trim(), permanentAddress || null, guardianName || null, guardianPhone || null,
           emergencyContact || null, messEligibility !== false, mealEligibilityStart || null, mealEligibilityEnd || null,
           qrToken, salt, userId, notes || null
@@ -576,7 +634,7 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
 
     // Pre-load departments, courses, and academic years for intelligent mapping
     const departmentsRes = await executeQuery('SELECT id, code, name FROM departments');
-    const coursesRes = await executeQuery('SELECT id, department_id, code, name FROM courses');
+    const coursesRes = await executeQuery('SELECT id, department_id, code, name, duration_years, program_level FROM courses');
     const academicYearsRes = await executeQuery('SELECT id, name, is_current FROM academic_years');
     const defaultAcademicYearId = academicYearsRes.rows.find((ay: any) => ay.is_current)?.id || academicYearsRes.rows[0]?.id || null;
 
@@ -587,21 +645,154 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
       deptMap.set(d.name.toLowerCase(), d.id);
     });
 
-    const courseMap = new Map<string, { id: string; department_id: string }>();
+    const courseMap = new Map<string, { id: string; department_id: string; program_level: string }>();
     coursesRes.rows.forEach((c: any) => {
-      courseMap.set(c.id.toLowerCase(), { id: c.id, department_id: c.department_id });
-      courseMap.set(c.code.toLowerCase(), { id: c.id, department_id: c.department_id });
-      courseMap.set(c.name.toLowerCase(), { id: c.id, department_id: c.department_id });
+      courseMap.set(c.id.toLowerCase(), { id: c.id, department_id: c.department_id, program_level: c.program_level || 'UG' });
+      courseMap.set(c.code.toLowerCase(), { id: c.id, department_id: c.department_id, program_level: c.program_level || 'UG' });
+      courseMap.set(c.name.toLowerCase(), { id: c.id, department_id: c.department_id, program_level: c.program_level || 'UG' });
     });
 
+    // RBAC: Wing boundary restriction for bulk import
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const staffWing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const staffGender = staffWing === 'girls' ? 'female' : (staffWing === 'boys' ? 'male' : null);
+
     const defaultPasswordHash = await bcrypt.hash('Aknu@2026!', 10);
+
+    // Flexible row header value accessor
+    const getRowVal = (rowObj: any, ...aliases: string[]): string => {
+      for (const alias of aliases) {
+        if (rowObj[alias] !== undefined && rowObj[alias] !== null) {
+          const val = String(rowObj[alias]).trim();
+          if (val) return val;
+        }
+      }
+      const objKeys = Object.keys(rowObj);
+      for (const alias of aliases) {
+        const cleanAlias = alias.toLowerCase().replace(/[^a-z0-9]/g, '');
+        for (const k of objKeys) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (cleanK === cleanAlias && rowObj[k] !== undefined && rowObj[k] !== null) {
+            const val = String(rowObj[k]).trim();
+            if (val) return val;
+          }
+        }
+      }
+      return '';
+    };
+
+    // Dictionary normalization helpers
+    const normalizeDegree = (raw: string) => {
+      const clean = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (clean.includes('btech') || clean === 'ug' || clean.includes('bacheloroftechnology')) {
+        return { code: 'BTECH', name: 'B.Tech', duration: 4, programLevel: 'UG' as const };
+      }
+      if (clean.includes('bpharm') || clean.includes('bachelorofpharmacy')) {
+        return { code: 'BPHARM', name: 'B.Pharmacy', duration: 4, programLevel: 'UG' as const };
+      }
+      if (clean.includes('bed') || clean.includes('bachelorofeducation')) {
+        return { code: 'BED', name: 'B.Ed', duration: 2, programLevel: 'UG' as const };
+      }
+      if (clean.includes('mtech') || clean.includes('masteroftechnology')) {
+        return { code: 'MTECH', name: 'M.Tech', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('mca') || clean.includes('masterofcomputerapplications')) {
+        return { code: 'MCA', name: 'MCA', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('mba') || clean.includes('managementstudies') || clean.includes('businessadmin')) {
+        return { code: 'MBA', name: 'MBA', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('bsc') || clean.includes('bachelorofscience')) {
+        return { code: 'BSC', name: 'B.Sc', duration: 3, programLevel: 'UG' as const };
+      }
+      if (clean.includes('msc') || clean.includes('masterofscience')) {
+        return { code: 'MSC', name: 'M.Sc', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('bcom') || clean.includes('bachelorofcommerce')) {
+        return { code: 'BCOM', name: 'B.Com', duration: 3, programLevel: 'UG' as const };
+      }
+      if (clean.includes('mcom') || clean.includes('masterofcommerce')) {
+        return { code: 'MCOM', name: 'M.Com', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('ba') || clean.includes('bachelorofarts')) {
+        return { code: 'BA', name: 'B.A', duration: 3, programLevel: 'UG' as const };
+      }
+      if (clean.includes('ma') || clean.includes('masterofarts')) {
+        return { code: 'MA', name: 'M.A', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('mpharm') || clean.includes('masterofpharmacy')) {
+        return { code: 'MPHARM', name: 'M.Pharmacy', duration: 2, programLevel: 'PG' as const };
+      }
+      if (clean.includes('phd') || clean.includes('doctor') || clean.includes('research')) {
+        return { code: 'PHD', name: 'Ph.D', duration: 3, programLevel: 'PhD' as const };
+      }
+      return { code: raw.toUpperCase().slice(0, 10) || 'BTECH', name: raw || 'B.Tech', duration: 4, programLevel: 'UG' as const };
+    };
+
+    const normalizeBranch = (raw: string) => {
+      const clean = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (clean === 'civil' || clean === 'ce' || clean.includes('civil')) {
+        return { deptId: 'dept-civil', code: 'CIVIL', name: 'Civil Engineering', key: 'civil' };
+      }
+      if (clean === 'cse' || clean === 'cs' || clean.includes('computerscience') || clean.includes('computer')) {
+        return { deptId: 'dept-cse', code: 'CSE', name: 'Computer Science & Engineering', key: 'cse' };
+      }
+      if (clean === 'ece' || clean === 'ec' || clean.includes('electronic') || clean.includes('telecom')) {
+        return { deptId: 'dept-ece', code: 'ECE', name: 'Electronics & Communication Engineering', key: 'ece' };
+      }
+      if (clean === 'mech' || clean === 'me' || clean.includes('mechanical')) {
+        return { deptId: 'dept-mech', code: 'MECH', name: 'Mechanical Engineering', key: 'mech' };
+      }
+      if (clean === 'eee' || clean === 'ee' || clean.includes('electrical')) {
+        return { deptId: 'dept-eee', code: 'EEE', name: 'Electrical & Electronics Engineering', key: 'eee' };
+      }
+      if (clean === 'it' || clean.includes('infotech') || clean.includes('informationtech')) {
+        return { deptId: 'dept-it', code: 'IT', name: 'Information Technology', key: 'it' };
+      }
+      if (clean.includes('aids') || clean.includes('ai') || clean.includes('datascience') || clean.includes('artificial')) {
+        return { deptId: 'dept-aids', code: 'AI-DS', name: 'Artificial Intelligence & Data Science', key: 'aids' };
+      }
+      if (clean === 'mca' || clean.includes('computerapplication')) {
+        return { deptId: 'dept-mca', code: 'MCA', name: 'Master of Computer Applications', key: 'mca' };
+      }
+      if (clean === 'mba' || clean.includes('management') || clean.includes('business')) {
+        return { deptId: 'dept-mba', code: 'MBA', name: 'Department of Management Studies', key: 'mba' };
+      }
+      if (clean.includes('chem') || clean.includes('chemistry')) {
+        return { deptId: 'dept-chem', code: 'CHEM', name: 'Chemistry', key: 'chem' };
+      }
+      if (clean.includes('phys') || clean.includes('physics')) {
+        return { deptId: 'dept-phys', code: 'PHYS', name: 'Physics', key: 'phys' };
+      }
+      if (clean.includes('math') || clean.includes('mathematics')) {
+        return { deptId: 'dept-math', code: 'MATH', name: 'Mathematics', key: 'math' };
+      }
+      if (clean.includes('bio') || clean.includes('biotech')) {
+        return { deptId: 'dept-biotech', code: 'BIOTECH', name: 'Biotechnology', key: 'biotech' };
+      }
+      if (clean.includes('pharm')) {
+        return { deptId: 'dept-pharm', code: 'PHARM', name: 'Pharmaceutical Sciences', key: 'pharm' };
+      }
+      if (clean.includes('comm') || clean.includes('commerce') || clean.includes('account')) {
+        return { deptId: 'dept-comm', code: 'COMM', name: 'Commerce & Accountancy', key: 'comm' };
+      }
+      if (clean.includes('eng') || clean.includes('humanities')) {
+        return { deptId: 'dept-eng', code: 'ENG', name: 'English & Humanities', key: 'eng' };
+      }
+      if (clean.includes('econ')) {
+        return { deptId: 'dept-econ', code: 'ECON', name: 'Economics', key: 'econ' };
+      }
+      return null;
+    };
 
     for (let index = 0; index < rawRows.length; index++) {
       const row = rawRows[index];
       const rowNumber = index + 2; // spreadsheet 1-indexed header is row 1
 
-      const rollNumber = String(row['Roll Number'] || row['roll_number'] || row['RollNo'] || row['Roll'] || '').trim().toUpperCase();
-      let regNumber = String(row['Registration Number'] || row['reg_number'] || row['RegNo'] || row['RegistrationNo'] || '').trim().toUpperCase();
+      const rollNumber = getRowVal(row, 'Roll Number', 'roll_number', 'RollNo', 'Roll No', 'Roll', 'HTNO', 'HallTicket').toUpperCase();
+      let regNumber = getRowVal(row, 'Registration Number', 'reg_number', 'RegNo', 'Reg No', 'RegistrationNo').toUpperCase();
       if (regNumber) {
         const parts = regNumber.split('/');
         if (parts.length >= 6) {
@@ -612,16 +803,20 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
           }
         }
       }
-      const fullName = String(row['Full Name'] || row['full_name'] || row['Name'] || '').trim();
-      const email = String(row['Email'] || row['email'] || '').trim().toLowerCase();
-      const phone = String(row['Phone'] || row['phone'] || row['Mobile'] || '').trim();
-      const gender = String(row['Gender'] || row['gender'] || 'male').trim().toLowerCase();
+      const fullName = getRowVal(row, 'Full Name', 'full_name', 'Name', 'Student Name', 'Candidate Name');
+      let email = getRowVal(row, 'Email', 'email', 'E-mail', 'Email Address', 'Mail').toLowerCase();
+      const phone = getRowVal(row, 'Phone', 'phone', 'Mobile', 'Mobile Number', 'Contact');
+      
+      const rawGender = getRowVal(row, 'Gender', 'gender', 'Sex', 'sex').toLowerCase();
+      const gender: 'male' | 'female' = (rawGender.startsWith('f') || rawGender.includes('girl') || rawGender.includes('women')) ? 'female' : 'male';
 
-      // Read Course, Department, Year, Permanent Address
-      const rawCourse = String(row['Course'] || row['course'] || row['Course Name'] || row['Course Code'] || row['course_id'] || '').trim();
-      const rawDept = String(row['Department'] || row['department'] || row['Dept'] || row['Department Name'] || row['department_id'] || '').trim();
-      const rawYear = String(row['Year'] || row['year'] || row['Year of Study'] || row['YearOfStudy'] || row['Academic Year'] || '').trim();
-      const rawAddress = String(row['Permanent Address'] || row['permanent_address'] || row['Address'] || row['address'] || row['PermanentAddress'] || '').trim();
+      // Read Program Level, Course, Degree, Branch, Department, Year, Semester, Permanent Address
+      const rawProgramLevel = getRowVal(row, 'Program Level', 'ProgramLevel', 'Level', 'program_level', 'Program Type', 'Degree Level', 'UG/PG', 'UG_PG');
+      const rawDegree = getRowVal(row, 'Degree', 'degree', 'Program', 'program', 'Course', 'course', 'Course Name', 'Course Code', 'course_id');
+      const rawBranch = getRowVal(row, 'Branch', 'branch', 'Specialization', 'specialization', 'Department', 'department', 'Dept', 'dept', 'Department Name', 'department_id');
+      const rawYear = getRowVal(row, 'Year', 'year', 'Year of Study', 'YearOfStudy', 'Academic Year', 'Class');
+      const rawSemester = getRowVal(row, 'Semester', 'semester', 'Sem', 'Current Semester');
+      const rawAddress = getRowVal(row, 'Permanent Address', 'permanent_address', 'Address', 'address', 'PermanentAddress', 'City', 'Native');
 
       if (!rollNumber) {
         failedRows.push({ rowNumber, rollNumber, reason: 'Missing Roll Number' });
@@ -631,10 +826,25 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
         failedRows.push({ rowNumber, rollNumber, reason: 'Missing Full Name' });
         continue;
       }
-      if (!email || !email.includes('@')) {
-        failedRows.push({ rowNumber, rollNumber, reason: 'Invalid or missing Email address' });
+
+      // RBAC Wing Boundary Restriction: Prevent Boys' staff from uploading Girls or Girls' staff uploading Boys
+      if (staffWing && staffGender && gender !== staffGender) {
+        failedRows.push({
+          rowNumber,
+          rollNumber,
+          reason: `Access Denied: ${staffWing.toUpperCase()} wing staff can only upload ${staffGender} students (row gender: ${gender})`
+        });
         continue;
       }
+
+      // Auto-generate standard AKNU email if blank
+      if (!email) {
+        email = `${rollNumber.toLowerCase()}@aknu.edu.in`;
+      } else if (!email.includes('@')) {
+        failedRows.push({ rowNumber, rollNumber, reason: `Invalid email address format: "${email}"` });
+        continue;
+      }
+
       if (existingRolls.has(rollNumber)) {
         failedRows.push({ rowNumber, rollNumber, reason: `Duplicate Roll Number: ${rollNumber} already exists in university records` });
         continue;
@@ -647,33 +857,76 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
       existingRolls.add(rollNumber);
       existingEmails.add(email);
 
-      // Match course and department dynamically
-      let matchedCourse = courseMap.get(rawCourse.toLowerCase());
-      let matchedDeptId = deptMap.get(rawDept.toLowerCase()) || (matchedCourse ? matchedCourse.department_id : null);
+      // Intelligent Program Level, Degree & Branch Resolution
+      const normDeg = normalizeDegree(rawDegree || rawBranch || 'B.Tech');
+      const normBranch = normalizeBranch(rawBranch || rawDegree || 'CSE');
 
-      if (!matchedDeptId && rawDept) {
-        const words = rawDept.split(/\s+/).filter(Boolean);
-        const genCode = (words.length > 1 ? words.map((w: string) => w[0]).join('') : rawDept.slice(0, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DEPT';
+      let resolvedProgramLevel: 'UG' | 'PG' | 'PhD' = normDeg.programLevel || 'UG';
+      if (rawProgramLevel) {
+        const cleanPl = rawProgramLevel.toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (cleanPl.includes('phd') || cleanPl.includes('doctor') || cleanPl.includes('research')) {
+          resolvedProgramLevel = 'PhD';
+        } else if (cleanPl.includes('pg') || cleanPl.includes('post')) {
+          resolvedProgramLevel = 'PG';
+        } else if (cleanPl.includes('ug') || cleanPl.includes('under')) {
+          resolvedProgramLevel = 'UG';
+        }
+      }
+
+      let matchedDeptId: string | null = null;
+      let matchedCourseId: string | null = null;
+
+      if (normBranch && deptMap.has(normBranch.deptId.toLowerCase())) {
+        matchedDeptId = deptMap.get(normBranch.deptId.toLowerCase())!;
+      } else if (rawBranch && deptMap.has(rawBranch.toLowerCase())) {
+        matchedDeptId = deptMap.get(rawBranch.toLowerCase())!;
+      }
+
+      // Match distinct degree course (crs-btech, crs-mtech, crs-mca, crs-mba, crs-bsc, crs-phd, etc.)
+      const degreeCourseId = `crs-${normDeg.code.toLowerCase()}`;
+      if (courseMap.has(degreeCourseId.toLowerCase())) {
+        matchedCourseId = courseMap.get(degreeCourseId.toLowerCase())!.id;
+      } else if (courseMap.has(normDeg.code.toLowerCase())) {
+        matchedCourseId = courseMap.get(normDeg.code.toLowerCase())!.id;
+      } else if (rawDegree && courseMap.has(rawDegree.toLowerCase())) {
+        matchedCourseId = courseMap.get(rawDegree.toLowerCase())!.id;
+      }
+
+      // If department is still not resolved, resolve from matched course or create dynamic
+      if (!matchedDeptId && matchedCourseId) {
+        const cObj = coursesRes.rows.find((c: any) => c.id === matchedCourseId);
+        if (cObj) matchedDeptId = cObj.department_id;
+      }
+
+      if (!matchedDeptId && rawBranch) {
+        const words = rawBranch.split(/\s+/).filter(Boolean);
+        const genCode = (words.length > 1 ? words.map((w: string) => w[0]).join('') : rawBranch.slice(0, 6)).toUpperCase().replace(/[^A-Z0-9]/g, '') || 'DEPT';
         const newDeptId = `dept-${genCode.toLowerCase()}-${Date.now().toString().slice(-4)}`;
-        await executeQuery('INSERT INTO departments (id, code, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [newDeptId, genCode, rawDept]);
+        await executeQuery('INSERT INTO departments (id, code, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING', [newDeptId, genCode, rawBranch]);
         matchedDeptId = newDeptId;
-        deptMap.set(rawDept.toLowerCase(), newDeptId);
+        deptMap.set(rawBranch.toLowerCase(), newDeptId);
         deptMap.set(genCode.toLowerCase(), newDeptId);
       } else if (!matchedDeptId && departmentsRes.rows.length > 0) {
         matchedDeptId = departmentsRes.rows[0].id;
       }
 
-      if (!matchedCourse && rawCourse && matchedDeptId) {
-        const words = rawCourse.split(/\s+/).filter(Boolean);
-        const genCode = (words.length > 1 ? words.map((w: string) => w[0]).join('') : rawCourse.slice(0, 8)).toUpperCase().replace(/[^A-Z0-9-]/g, '') || 'CRS';
-        const newCourseId = `course-${genCode.toLowerCase()}-${Date.now().toString().slice(-4)}`;
-        await executeQuery('INSERT INTO courses (id, department_id, code, name, duration_years) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING', [newCourseId, matchedDeptId, genCode, rawCourse, 4]);
-        matchedCourse = { id: newCourseId, department_id: matchedDeptId };
-        courseMap.set(rawCourse.toLowerCase(), matchedCourse);
+      if (!matchedCourseId && rawDegree && matchedDeptId) {
+        const words = rawDegree.split(/\s+/).filter(Boolean);
+        const genCode = (words.length > 1 ? words.map((w: string) => w[0]).join('') : rawDegree.slice(0, 8)).toUpperCase().replace(/[^A-Z0-9-]/g, '') || 'CRS';
+        const newCourseId = `crs-${genCode.toLowerCase()}`;
+        await executeQuery(
+          'INSERT INTO courses (id, department_id, code, name, duration_years, program_level) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
+          [newCourseId, matchedDeptId, genCode, rawDegree, normDeg.duration, resolvedProgramLevel]
+        );
+        const matchedCourse = { id: newCourseId, department_id: matchedDeptId, program_level: resolvedProgramLevel };
+        courseMap.set(rawDegree.toLowerCase(), matchedCourse);
         courseMap.set(genCode.toLowerCase(), matchedCourse);
+        matchedCourseId = newCourseId;
       }
 
-      let matchedCourseId = matchedCourse ? matchedCourse.id : (coursesRes.rows.find((c: any) => c.department_id === matchedDeptId)?.id || coursesRes.rows[0]?.id || null);
+      if (!matchedCourseId) {
+        matchedCourseId = coursesRes.rows.find((c: any) => c.department_id === matchedDeptId)?.id || coursesRes.rows[0]?.id || null;
+      }
 
       if (!regNumber) {
         regNumber = await computeRegistrationNumber({
@@ -683,8 +936,20 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
         });
       }
 
-      let semester = parseInt(row['Semester'] || row['semester'] || '0') || 0;
-      let year = parseInt(rawYear.replace(/[^0-9]/g, '')) || 0;
+      // Year of study parsing (handles "1", "1st year", "First Year", "Final year", "IV", etc.)
+      let year = 0;
+      const yearStr = rawYear.toLowerCase().trim();
+      if (yearStr === 'i' || yearStr.startsWith('1') || yearStr.includes('first')) year = 1;
+      else if (yearStr === 'ii' || yearStr.startsWith('2') || yearStr.includes('second')) year = 2;
+      else if (yearStr === 'iii' || yearStr.startsWith('3') || yearStr.includes('third')) year = 3;
+      else if (yearStr === 'iv' || yearStr.startsWith('4') || yearStr.includes('fourth') || yearStr.includes('final')) year = 4;
+      else if (yearStr.startsWith('5')) year = 5;
+      else {
+        const digits = parseInt(yearStr.replace(/[^0-9]/g, ''), 10);
+        if (!isNaN(digits) && digits > 0) year = digits;
+      }
+
+      let semester = parseInt(rawSemester.replace(/[^0-9]/g, ''), 10) || 0;
 
       if (!year && semester) {
         year = Math.ceil(semester / 2);
@@ -695,21 +960,31 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
         semester = 1;
       }
 
+      // Cap year and semester to degree duration
+      const maxDuration = normDeg.duration || 4;
+      if (year > maxDuration) {
+        year = maxDuration;
+      }
+      if (semester > maxDuration * 2) {
+        semester = maxDuration * 2;
+      }
+
       validRows.push({
         rollNumber,
         regNumber,
         fullName,
         email,
         phone: phone || '0000000000',
-        gender: ['male', 'female'].includes(gender) ? gender : 'male',
+        gender,
+        programLevel: resolvedProgramLevel,
         departmentId: matchedDeptId,
         courseId: matchedCourseId,
         academicYearId: defaultAcademicYearId,
         yearOfStudy: year,
         currentSemester: semester,
         permanentAddress: rawAddress || null,
-        guardianName: row['Guardian Name'] || row['guardian_name'] || null,
-        guardianPhone: row['Guardian Phone'] || row['guardian_phone'] || null
+        guardianName: getRowVal(row, 'Guardian Name', 'guardian_name', 'Father Name', 'Parent Name') || null,
+        guardianPhone: getRowVal(row, 'Guardian Phone', 'guardian_phone', 'Parent Phone', 'Father Mobile') || null
       });
     }
 
@@ -733,18 +1008,18 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
           await query(
             `INSERT INTO students (
               id, student_id_code, roll_number, reg_number, full_name, gender,
-              department_id, course_id, academic_year_id, year_of_study, current_semester,
+              department_id, course_id, program_level, academic_year_id, year_of_study, current_semester,
               phone, email, permanent_address, guardian_name, guardian_phone,
               hostel_status, mess_eligibility, qr_credential_token, qr_salt, qr_status, user_id
             ) VALUES (
               $1, $2, $3, $4, $5, $6,
-              $7, $8, $9, $10, $11,
-              $12, $13, $14, $15, $16,
-              'active', true, $17, $18, 'active', $19
+              $7, $8, $9, $10, $11, $12,
+              $13, $14, $15, $16, $17,
+              'active', true, $18, $19, 'active', $20
             )`,
             [
               studentId, studentIdCode, item.rollNumber, item.regNumber, item.fullName, item.gender,
-              item.departmentId, item.courseId, item.academicYearId, item.yearOfStudy, item.currentSemester,
+              item.departmentId, item.courseId, item.programLevel, item.academicYearId, item.yearOfStudy, item.currentSemester,
               item.phone, item.email, item.permanentAddress, item.guardianName, item.guardianPhone,
               qrToken, salt, userId
             ]
@@ -783,6 +1058,7 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
     gender,
     departmentId,
     courseId,
+    programLevel,
     yearOfStudy,
     currentSemester,
     permanentAddress,
@@ -800,6 +1076,27 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
     }
 
     const current = existing.rows[0];
+
+    // RBAC: Wing check
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const staffWing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const staffGender = staffWing === 'girls' ? 'female' : (staffWing === 'boys' ? 'male' : null);
+
+    if (staffGender && current.gender !== staffGender) {
+      res.status(403).json({ success: false, error: 'Access denied: Cannot modify student belonging to a different gender wing' });
+      return;
+    }
+
+    // Resolve program level if changing course
+    let resolvedProgramLevel = programLevel;
+    if (!resolvedProgramLevel && courseId && courseId !== current.course_id) {
+      const cRes = await executeQuery('SELECT program_level FROM courses WHERE id = $1', [courseId]);
+      if (cRes.rowCount && cRes.rows[0].program_level) {
+        resolvedProgramLevel = cRes.rows[0].program_level;
+      }
+    }
 
     // Check email uniqueness if changing email
     if (email && email.toLowerCase() !== (current.email || '').toLowerCase()) {
@@ -823,15 +1120,16 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           gender = COALESCE($4, gender),
           department_id = COALESCE($5, department_id),
           course_id = COALESCE($6, course_id),
-          year_of_study = COALESCE($7, year_of_study),
-          current_semester = COALESCE($8, current_semester),
-          permanent_address = COALESCE($9, permanent_address),
-          guardian_name = COALESCE($10, guardian_name),
-          guardian_phone = COALESCE($11, guardian_phone),
-          mess_eligibility = COALESCE($12, mess_eligibility),
-          hostel_status = COALESCE($13, hostel_status),
+          program_level = COALESCE($7, program_level),
+          year_of_study = COALESCE($8, year_of_study),
+          current_semester = COALESCE($9, current_semester),
+          permanent_address = COALESCE($10, permanent_address),
+          guardian_name = COALESCE($11, guardian_name),
+          guardian_phone = COALESCE($12, guardian_phone),
+          mess_eligibility = COALESCE($13, mess_eligibility),
+          hostel_status = COALESCE($14, hostel_status),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $14`,
+        WHERE id = $15`,
         [
           fullName ? fullName.trim() : null,
           phone ? phone.trim() : null,
@@ -839,6 +1137,7 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           gender || null,
           departmentId || null,
           courseId || null,
+          resolvedProgramLevel || null,
           yearOfStudy ? parseInt(String(yearOfStudy), 10) : null,
           currentSemester ? parseInt(String(currentSemester), 10) : null,
           permanentAddress !== undefined ? permanentAddress : null,
@@ -890,6 +1189,18 @@ export async function deleteStudent(req: AuthRequest, res: Response): Promise<vo
 
     const student = existing.rows[0];
 
+    // RBAC: Wing boundary restriction
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const staffWing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const staffGender = staffWing === 'girls' ? 'female' : (staffWing === 'boys' ? 'male' : null);
+
+    if (staffGender && student.gender !== staffGender) {
+      res.status(403).json({ success: false, error: 'Access denied: Cannot delete student from another gender wing' });
+      return;
+    }
+
     await executeTransaction(async (query) => {
       // 1. Find active allocations to vacate beds & decrement room occupancy
       const activeAllocs = await query(
@@ -908,11 +1219,14 @@ export async function deleteStudent(req: AuthRequest, res: Response): Promise<vo
       // 2. Delete allocations
       await query(`DELETE FROM student_allocations WHERE student_id = $1`, [id]);
 
-      // 3. Delete related transactions, leaves, complaints, etc.
+      // 3. Delete related transactions, leaves, complaints, fees, visitors, etc.
       await query(`DELETE FROM meal_transactions WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM proxy_meal_permissions WHERE target_student_id = $1 OR proxy_student_id = $1`, [id]);
       await query(`DELETE FROM leave_applications WHERE student_id = $1`, [id]);
       await query(`DELETE FROM complaints WHERE student_id = $1`, [id]);
-      await query(`DELETE FROM student_dues WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM fee_payments WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM student_fee_ledgers WHERE student_id = $1`, [id]);
+      await query(`DELETE FROM visitors WHERE student_id = $1`, [id]);
 
       // 4. Delete student record
       await query(`DELETE FROM students WHERE id = $1`, [id]);

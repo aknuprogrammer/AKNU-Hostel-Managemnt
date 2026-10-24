@@ -32,6 +32,7 @@ interface DashboardStats {
   announcements: any[];
   recentAudits: any[];
   hostels?: any[];
+  assignedCategory?: 'boys' | 'girls' | 'all';
 }
 
 export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ onNavigateTo }) => {
@@ -77,32 +78,7 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
   return (
     <div className="space-y-3">
       {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#23395D] via-[#192B47] to-[#354D70] text-white rounded-lg p-5 sm:p-6 shadow-sm relative overflow-hidden border border-[#DED8CF]/30">
-        <div className="absolute right-0 top-0 bottom-0 w-96 bg-gradient-to-l from-[#92582F]/20 to-transparent pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
-              Welcome back, {user?.fullName}!
-            </h1>
-            <p className="text-xs sm:text-sm text-[#DCE5F1] mt-1 max-w-xl">
-              Centralized hostel allocations, verifiable QR meal verification, and residential workflow monitoring.
-            </p>
-          </div>
-
-          {/* Quick Action Button for Warden / Mess Scanner */}
-          {['super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'].includes(role) && (
-            <Button
-              variant="accent"
-              size="md"
-              leftIcon={<UtensilsCrossed className="w-4 h-4" />}
-              onClick={() => onNavigateTo('meal-scanner')}
-              className="flex-shrink-0"
-            >
-              Open Meal QR Scanner
-            </Button>
-          )}
-        </div>
-      </div>
+      
 
       {/* ACTIVE MEAL SESSION STATUS BAR */}
       <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -231,16 +207,16 @@ export const DashboardPage: React.FC<{ onNavigateTo: (tab: any) => void }> = ({ 
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="text-base font-bold text-slate-900">
-              {user?.assignedCategory === 'boys'
+              {(user?.assignedCategory === 'boys' || stats?.assignedCategory === 'boys')
                 ? "Boys' Hostel Wing Buildings"
-                : user?.assignedCategory === 'girls'
+                : (user?.assignedCategory === 'girls' || stats?.assignedCategory === 'girls')
                 ? "Girls' Hostel Wing Buildings"
                 : "University Hostel Buildings"}
             </h3>
             <p className="text-xs text-slate-500">
-              {user?.assignedCategory === 'boys'
+              {(user?.assignedCategory === 'boys' || stats?.assignedCategory === 'boys')
                 ? "Adikavi Nannaya University Boys' Campus Jurisdiction"
-                : user?.assignedCategory === 'girls'
+                : (user?.assignedCategory === 'girls' || stats?.assignedCategory === 'girls')
                 ? "Adikavi Nannaya University Girls' Campus Jurisdiction"
                 : "Adikavi Nannaya University Boys' and Girls' Campuses"}
             </p>

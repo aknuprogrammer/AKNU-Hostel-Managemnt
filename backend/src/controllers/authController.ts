@@ -43,14 +43,31 @@ export async function login(req: Request, res: Response): Promise<void> {
 
 
 
-    // Get assigned hostels if staff
-    const hostelAssignments = await executeQuery(
-      `SELECT DISTINCT h.id, h.name, h.code, h.category
-       FROM hostels h
-       LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
-       WHERE uha.user_id = $1 OR h.chief_warden_id = $1`,
-      [user.id]
-    );
+    // Get assigned hostels if staff or wing-level hostels
+    let hostelAssignments;
+    if (user.role === 'super_admin') {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category FROM hostels h ORDER BY h.name ASC`
+      );
+    } else if (user.gender_wing && (user.gender_wing === 'boys' || user.gender_wing === 'girls')) {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category
+         FROM hostels h
+         LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
+         WHERE uha.user_id = $1 OR h.chief_warden_id = $1 OR h.category = $2
+         ORDER BY h.name ASC`,
+        [user.id, user.gender_wing]
+      );
+    } else {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category
+         FROM hostels h
+         LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
+         WHERE uha.user_id = $1 OR h.chief_warden_id = $1
+         ORDER BY h.name ASC`,
+        [user.id]
+      );
+    }
 
     let assignedCategory: 'boys' | 'girls' | 'all' = (user.gender_wing as 'boys' | 'girls' | 'all') || 'all';
     if (user.role !== 'super_admin' && (!user.gender_wing || user.gender_wing === 'all') && hostelAssignments.rows.length > 0) {
@@ -143,13 +160,31 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
     }
 
     const user = userResult.rows[0];
-    const hostelAssignments = await executeQuery(
-      `SELECT DISTINCT h.id, h.name, h.code, h.category
-       FROM hostels h
-       LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
-       WHERE uha.user_id = $1 OR h.chief_warden_id = $1`,
-      [user.id]
-    );
+    // Get assigned hostels if staff or wing-level hostels
+    let hostelAssignments;
+    if (user.role === 'super_admin') {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category FROM hostels h ORDER BY h.name ASC`
+      );
+    } else if (user.gender_wing && (user.gender_wing === 'boys' || user.gender_wing === 'girls')) {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category
+         FROM hostels h
+         LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
+         WHERE uha.user_id = $1 OR h.chief_warden_id = $1 OR h.category = $2
+         ORDER BY h.name ASC`,
+        [user.id, user.gender_wing]
+      );
+    } else {
+      hostelAssignments = await executeQuery(
+        `SELECT DISTINCT h.id, h.name, h.code, h.category
+         FROM hostels h
+         LEFT JOIN user_hostel_assignments uha ON uha.hostel_id = h.id
+         WHERE uha.user_id = $1 OR h.chief_warden_id = $1
+         ORDER BY h.name ASC`,
+        [user.id]
+      );
+    }
 
     let assignedCategory: 'boys' | 'girls' | 'all' = (user.gender_wing as 'boys' | 'girls' | 'all') || 'all';
     if (user.role !== 'super_admin' && (!user.gender_wing || user.gender_wing === 'all') && hostelAssignments.rows.length > 0) {

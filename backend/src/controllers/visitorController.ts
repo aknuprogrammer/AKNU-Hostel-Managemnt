@@ -107,10 +107,21 @@ export async function getVisitors(req: AuthRequest, res: Response): Promise<void
       sql += ` AND v.status = $${params.length}`;
     }
 
-    if (req.user?.role !== 'super_admin' && req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
-      const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
-      params.push(...req.user.assignedHostels);
-      sql += ` AND v.hostel_id IN (${placeholders})`;
+    // RBAC: Strict Gender Wing Isolation
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      if (req.user?.assignedHostels && req.user.assignedHostels.length > 0) {
+        const placeholders = req.user.assignedHostels.map((_, i) => `$${params.length + i + 1}`).join(',');
+        params.push(...req.user.assignedHostels);
+        sql += ` AND v.hostel_id IN (${placeholders})`;
+      } else {
+        sql += ` AND h.category = $${params.length + 1}`;
+        params.push(wing);
+      }
     }
 
     sql += ' ORDER BY v.check_in_time DESC';
