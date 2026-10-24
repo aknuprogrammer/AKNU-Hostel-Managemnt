@@ -169,41 +169,5 @@ export async function seedDatabase() {
     CREATE INDEX IF NOT EXISTS idx_proxy_target_date ON proxy_meal_permissions(target_student_id, service_date, meal_session_id)
   `);
 
-  // Purge sample physical infrastructure, sample staff accounts, and all sample mock records
-  // No sample hostels, rooms, or beds are seeded. Super Admin will add real hostels and staff from the UI.
-  const cleanupQueries = [
-    'DELETE FROM meal_transaction_corrections',
-    'DELETE FROM scan_attempts',
-    'DELETE FROM proxy_meal_permissions',
-    'DELETE FROM meal_transactions',
-    'DELETE FROM gate_movements',
-    'DELETE FROM gate_passes',
-    'DELETE FROM leave_applications',
-    'DELETE FROM complaints',
-    'DELETE FROM allocation_history',
-    'DELETE FROM student_allocations',
-    'DELETE FROM students',
-    'DELETE FROM mess_inventory_transactions',
-    'DELETE FROM mess_inventory',
-    'DELETE FROM mess_menus',
-    'DELETE FROM beds',
-    'DELETE FROM rooms',
-    'DELETE FROM floors',
-    'DELETE FROM blocks',
-    'DELETE FROM user_hostel_assignments',
-    'DELETE FROM hostels',
-    "DELETE FROM users WHERE id IN ('usr-chief-boys', 'usr-chief-girls', 'usr-warden-boys', 'usr-warden-girls', 'usr-ja-boys', 'usr-ja-girls') OR role = 'student'"
-  ];
-
-  for (const query of cleanupQueries) {
-    try {
-      await executeQuery(query);
-    } catch (err: any) {
-      if (!err.message?.includes('does not exist')) {
-        console.warn(`[Seed Cleanup Notice] (${query}):`, err.message);
-      }
-    }
-  }
-
-  console.log('[Seed] Database ready: Super Admin active, academic master list ready, 0 sample hostels/rooms. Ready for live setup.');
+  console.log('[Seed] Database ready: Super Admin active, academic master list verified, live data preserved.');
 }
