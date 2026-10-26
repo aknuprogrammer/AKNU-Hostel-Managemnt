@@ -177,12 +177,12 @@ export const LeavePage: React.FC = () => {
 
           <div className="flex gap-2 max-w-md items-center">
             <div className="flex-1">
-              <input
+              <Input
                 type="text"
                 placeholder="Enter Pass Code (e.g. GP-101234)"
                 value={searchPassCode}
                 onChange={(e) => setSearchPassCode(e.target.value.toUpperCase())}
-                className="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-xs font-mono uppercase text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                className="font-mono uppercase"
               />
             </div>
             <Button

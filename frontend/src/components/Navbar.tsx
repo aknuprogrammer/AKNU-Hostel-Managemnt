@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext.js';
-import { LogOut, QrCode } from 'lucide-react';
+import { LogOut, CreditCard } from 'lucide-react';
 import { AknuLogo } from './AknuLogo.js';
+import { Button, IconButton } from './ui/index.js';
 
 interface NavbarProps {
   onOpenRoleSwitcher?: () => void;
@@ -97,15 +98,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right: User profile, Student QR ID button & Logout */}
           <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
-            {/* Student quick QR ID button */}
+            {/* Student quick Resident ID button */}
             {user?.role === 'student' && onOpenDigitalId && (
-              <button
+              <Button
+                variant="success"
+                size="sm"
+                leftIcon={<CreditCard className="w-3.5 h-3.5" />}
                 onClick={onOpenDigitalId}
-                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition shadow-sm"
               >
-                <QrCode className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">My Digital ID</span>
-              </button>
+                <span className="hidden sm:inline">My Resident ID</span>
+              </Button>
             )}
 
             {/* Active User Info */}
@@ -115,13 +117,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {/* Logout */}
-            <button
+            <IconButton
+              icon={<LogOut className="w-4 h-4 text-slate-300 hover:text-red-300" />}
+              size="sm"
+              variant="outline"
+              className="bg-slate-800/80 border-slate-700 hover:bg-red-900/40"
               onClick={logout}
-              className="p-2 rounded-md bg-slate-800/80 hover:bg-red-900/40 text-slate-300 hover:text-red-300 border border-slate-700 transition cursor-pointer"
               title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            />
           </div>
 
         </div>

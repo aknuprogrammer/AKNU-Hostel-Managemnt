@@ -29,7 +29,9 @@ import {
   Input,
   Select,
   Modal,
-  Badge
+  Badge,
+  IconButton,
+  ButtonGroup
 } from '../components/ui/index.js';
 
 interface DirectoryStudent {
@@ -463,17 +465,13 @@ export const MealScannerPage: React.FC = () => {
           </div>
 
           {/* Mute/Sound Toggle */}
-          <button
+          <IconButton
+            icon={soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            size="md"
+            variant={soundEnabled ? 'secondary' : 'danger'}
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-2.5 rounded-xl border transition ${
-              soundEnabled
-                ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-                : 'bg-red-50 text-red-600 border-red-200'
-            }`}
             title={soundEnabled ? 'Mute Audio Chime' : 'Enable Audio Chime'}
-          >
-            {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </button>
+          />
 
           {/* Quick Action: Grant Late Permission */}
           <Button
@@ -763,29 +761,24 @@ export const MealScannerPage: React.FC = () => {
 
           {/* Navigation Tabs for Logs & Late Permissions */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="flex border-b border-slate-200">
-              <button
-                onClick={() => setActiveTab('camera')}
-                className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-2 border-b-2 ${
-                  activeTab === 'camera'
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <History className="w-4 h-4" />
-                Live Mess Feed ({recentScans.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('late-permissions')}
-                className={`flex-1 py-3 text-xs font-bold transition flex items-center justify-center gap-2 border-b-2 ${
-                  activeTab === 'late-permissions'
-                    ? 'border-amber-600 text-amber-700 bg-amber-50/50'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Clock className="w-4 h-4 text-amber-600" />
-                Late Passes ({latePermissions.length})
-              </button>
+            <div className="p-2 border-b border-slate-200 bg-slate-50">
+              <ButtonGroup<'camera' | 'late-permissions' | 'history'>
+                value={activeTab}
+                onChange={(val) => setActiveTab(val)}
+                className="w-full"
+                options={[
+                  {
+                    value: 'camera',
+                    label: `Live Mess Feed (${recentScans.length})`,
+                    icon: <History className="w-4 h-4" />
+                  },
+                  {
+                    value: 'late-permissions',
+                    label: `Late Passes (${latePermissions.length})`,
+                    icon: <Clock className="w-4 h-4 text-amber-600" />
+                  }
+                ]}
+              />
             </div>
 
             {/* Tab 1: Live Dining Transactions Feed */}

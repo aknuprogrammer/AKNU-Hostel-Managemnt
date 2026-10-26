@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth, ROLE_PRESETS } from '../context/AuthContext.js';
 import { UserRole } from '../types.js';
 import { X, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Button, IconButton } from './ui/index.js';
 
 interface RoleSwitcherModalProps {
   isOpen: boolean;
@@ -60,12 +61,13 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({ isOpen, on
               </p>
             </div>
           </div>
-          <button
+          <IconButton
+            icon={<X className="w-5 h-5 text-[#DCE5F1]" />}
+            size="sm"
+            variant="ghost"
             onClick={onClose}
-            className="p-1 rounded-md hover:bg-[#192B47] text-[#DCE5F1] hover:text-white transition"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            title="Close"
+          />
         </div>
 
         {/* Roles Grid */}
@@ -123,12 +125,13 @@ export const RoleSwitcherModal: React.FC<RoleSwitcherModalProps> = ({ isOpen, on
 
         {/* Footer */}
         <div className="px-6 py-3 bg-[#F1ECE5] border-t border-[#DED8CF] flex justify-end">
-          <button
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={onClose}
-            className="px-4 py-2 bg-[#DED8CF] hover:bg-[#C8C0B5] text-[#202B3C] text-xs font-semibold rounded-lg transition"
           >
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

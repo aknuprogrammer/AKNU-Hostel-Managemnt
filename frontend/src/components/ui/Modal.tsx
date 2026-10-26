@@ -8,6 +8,7 @@ export interface ModalProps {
   onClose: () => void;
   title: string;
   subtitle?: string;
+  description?: string;
   icon?: React.ReactNode;
   size?: ModalSize;
   footer?: React.ReactNode;
@@ -31,6 +32,7 @@ export const Modal: React.FC<ModalProps> = ({
   onClose,
   title,
   subtitle,
+  description,
   icon,
   size = 'lg',
   footer,
@@ -109,8 +111,8 @@ export const Modal: React.FC<ModalProps> = ({
             )}
             <div className="min-w-0">
               <h3 className="font-bold text-base text-white truncate leading-tight">{title}</h3>
-              {subtitle && (
-                <p className="text-[11px] text-[#DCE5F1] truncate mt-0.5">{subtitle}</p>
+              {(subtitle || description) && (
+                <p className="text-[11px] text-[#DCE5F1] truncate mt-0.5">{subtitle || description}</p>
               )}
             </div>
           </div>

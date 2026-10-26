@@ -2,7 +2,6 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext.js';
 import {
   LayoutDashboard,
-  QrCode,
   Users,
   Building2,
   CalendarCheck,
@@ -16,6 +15,7 @@ import {
   ChevronRight,
   UserCheck
 } from 'lucide-react';
+import { Button, IconButton } from './ui/index.js';
 
 export type ActiveTab =
   | 'dashboard'
@@ -62,8 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, show: canAccessDashboard },
-    { id: 'hostels', label: 'Hostels & Rooms', icon: Building2, show: canAccessHostels },
     { id: 'students', label: 'Student Records', icon: Users, show: canAccessStudents },
+    { id: 'hostels', label: 'Hostels & Rooms', icon: Building2, show: canAccessHostels },
     {
       id: 'mess',
       label: role === 'student' ? 'Hostel Menu' : 'Mess Operations',
@@ -104,19 +104,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           )}
           {onToggleCollapse && (
-            <button
+            <IconButton
+              icon={
+                isCollapsed ? (
+                  <ChevronRight className="w-4 h-4 text-[#E0AD83]" />
+                ) : (
+                  <ChevronLeft className="w-4 h-4 text-[#A9C0E4]" />
+                )
+              }
+              size="sm"
+              variant="secondary"
               onClick={onToggleCollapse}
-              className={`p-1.5 rounded-lg text-[#F0E0D2] hover:text-white bg-[#192B47]/90 hover:bg-[#354D70] border border-[#354D70]/60 transition shadow-xs ${isCollapsed ? 'mx-auto' : ''
-                }`}
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {isCollapsed ? (
-                <ChevronRight className="w-4 h-4 text-[#E0AD83]" />
-              ) : (
-                <ChevronLeft className="w-4 h-4 text-[#A9C0E4]" />
-              )}
-            </button>
+              className={`bg-[#192B47]/90 hover:bg-[#354D70] border border-[#354D70]/60 ${isCollapsed ? 'mx-auto' : ''}`}
+            />
           )}
         </div>
 
@@ -161,25 +163,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {role === 'student' && (
           <>
             {!isCollapsed ? (
-              <button
+              <Button
+                variant="accent"
+                isFullWidth
+                size="sm"
                 onClick={onOpenDigitalId}
-                className="w-full flex items-center justify-center space-x-2 py-2.5 px-3 bg-[#92582F] hover:bg-[#754522] text-white font-semibold text-xs rounded-md shadow-md transition transform active:scale-95"
+                leftIcon={<CreditCard className="w-4 h-4 text-[#F0E0D2]" />}
+                className="bg-[#92582F] hover:bg-[#754522]"
               >
-                <CreditCard className="w-4 h-4 text-[#F0E0D2]" />
-                <span>Show My QR Digital ID</span>
-              </button>
+                Show Resident ID Card
+              </Button>
             ) : (
               <div className="relative group flex justify-center">
-                <button
+                <IconButton
+                  icon={<CreditCard className="w-4 h-4 text-[#F0E0D2]" />}
+                  size="md"
+                  variant="accent"
                   onClick={onOpenDigitalId}
-                  className="w-10 h-10 flex items-center justify-center bg-[#92582F] hover:bg-[#754522] text-white rounded-md shadow-md transition transform active:scale-95"
-                  title="Show My QR Digital ID"
-                  aria-label="Show My QR Digital ID"
-                >
-                  <CreditCard className="w-4 h-4 text-[#F0E0D2]" />
-                </button>
+                  title="Show Resident ID Card"
+                  aria-label="Show Resident ID Card"
+                  className="bg-[#92582F] hover:bg-[#754522]"
+                />
                 <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-[#192B47] text-white text-xs font-semibold rounded-md shadow-xl whitespace-nowrap z-50 border border-[#354D70] opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity">
-                  Show My QR Digital ID
+                  Show Resident ID Card
                 </div>
               </div>
             )}

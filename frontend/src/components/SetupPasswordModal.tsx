@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
+import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import { apiRequest, setStoredToken } from '../services/api.js';
+import { Modal, Input, Button, IconButton } from './ui/index.js';
 
 interface SetupPasswordModalProps {
   isOpen: boolean;
@@ -30,17 +31,9 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
   const [successMsg, setSuccessMsg] = useState('');
 
   useEffect(() => {
-    if (isOpen) {
-      setIdentifier(initialIdentifier);
-      setTemporaryPassword(initialTemporaryPassword);
-      setErrorMsg('');
-      setSuccessMsg('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setShowNew(false);
-      setShowConfirm(false);
-    }
-  }, [isOpen, initialIdentifier, initialTemporaryPassword]);
+    if (initialIdentifier) setIdentifier(initialIdentifier);
+    if (initialTemporaryPassword) setTemporaryPassword(initialTemporaryPassword);
+  }, [initialIdentifier, initialTemporaryPassword]);
 
   if (!isOpen) return null;
 
@@ -50,17 +43,15 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
     setSuccessMsg('');
 
     if (!identifier.trim()) {
-      setErrorMsg('Account identifier is missing. Please enter your Roll Number or Email on the login form.');
+      setErrorMsg('Identifier (roll number or email) is required.');
       return;
     }
-    if (!temporaryPassword) {
-      setErrorMsg('Temporary password is required to verify identity before setting new password.');
-      return;
-    }
+
     if (newPassword.length < 6) {
       setErrorMsg('New password must be at least 6 characters long.');
       return;
     }
+
     if (newPassword !== confirmPassword) {
       setErrorMsg('New password and confirm password do not match.');
       return;
@@ -68,13 +59,17 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
 
     setLoading(true);
     try {
-      const res = await apiRequest<{ success: boolean; message: string; token?: string; user?: any }>('/auth/setup-password', {
+      const payload: any = {
+        identifier: identifier.trim(),
+        newPassword
+      };
+      if (temporaryPassword.trim()) {
+        payload.currentPassword = temporaryPassword.trim();
+      }
+
+      const res = await apiRequest('/auth/setup-password', {
         method: 'POST',
-        body: {
-          identifier: identifier.trim(),
-          temporaryPassword,
-          newPassword
-        }
+        body: JSON.stringify(payload)
       });
 
       if (res.success) {
@@ -95,128 +90,98 @@ export const SetupPasswordModal: React.FC<SetupPasswordModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full border border-[#DED8CF] overflow-hidden transform transition-all">
-        {/* Header */}
-        <div className="px-6 py-4 bg-[#23395D] text-white flex justify-between items-center border-b border-[#192B47]">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-full bg-[#E0AD83]/20 flex items-center justify-center text-[#E0AD83]">
-              <KeyRound className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-white uppercase tracking-wider">
-                Setup New Password
-              </h3>
-              <p className="text-[11px] text-[#A9C0E4]">
-                Replace temporary password with your private credentials
-              </p>
-            </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Setup New Password"
+      description="Replace temporary password with your private credentials"
+      size="md"
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {errorMsg && (
+          <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{errorMsg}</span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:text-white rounded-md transition text-[#DCE5F1]"
-          >
-            <X className="w-5 h-5" />
-          </button>
+        )}
+
+        {successMsg && (
+          <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        {/* User Account Verification Pill */}
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+          <div>
+            <span className="text-slate-500 font-medium block text-[11px]">Authorized Account</span>
+            <span className="font-extrabold text-slate-800">{identifier || 'Current User'}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Temp Password Verified</span>
+          </div>
         </div>
 
-        {/* Form Body - strictly contains New Password and Confirm Password with Eye Icons */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {errorMsg && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+        {/* Field 1: New Password (with eye toggle) */}
+        <Input
+          required
+          type={showNew ? 'text' : 'password'}
+          label="New Password"
+          placeholder="Enter new password (min 6 characters)"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          autoFocus
+          leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
+          rightIcon={
+            <IconButton
+              icon={showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              size="xs"
+              variant="ghost"
+              onClick={() => setShowNew(!showNew)}
+              title={showNew ? 'Hide password' : 'View password'}
+            />
+          }
+        />
 
-          {successMsg && (
-            <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-              <span>{successMsg}</span>
-            </div>
-          )}
+        {/* Field 2: Confirm Password (with eye toggle) */}
+        <Input
+          required
+          type={showConfirm ? 'text' : 'password'}
+          label="Confirm New Password"
+          placeholder="Re-enter your new password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
+          rightIcon={
+            <IconButton
+              icon={showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              size="xs"
+              variant="ghost"
+              onClick={() => setShowConfirm(!showConfirm)}
+              title={showConfirm ? 'Hide password' : 'View password'}
+            />
+          }
+        />
 
-          {/* User Account Verification Pill */}
-          <div className="p-3 rounded-lg bg-[#F7F3ED] border border-[#DED8CF] flex items-center justify-between text-xs">
-            <div>
-              <span className="text-[#737C89] font-medium block text-[11px]">Authorized Account</span>
-              <span className="font-extrabold text-[#202B3C]">{identifier || 'Current User'}</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Temp Password Verified</span>
-            </div>
-          </div>
+        {/* Submit Action */}
+        <div className="pt-2">
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            isFullWidth
+            loading={loading}
+          >
+            Save & Set New Password
+          </Button>
+        </div>
 
-          {/* Field 1: New Password (with eye toggle) */}
-          <div>
-            <label className="text-xs font-bold text-[#202B3C] block mb-1">
-              New Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#737C89] absolute left-3 top-3" />
-              <input
-                required
-                type={showNew ? 'text' : 'password'}
-                placeholder="Enter new password (min 6 characters)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full pl-9 pr-10 py-2.5 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-xs text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5]"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowNew(!showNew)}
-                className="absolute right-3 top-2.5 text-[#737C89] hover:text-[#202B3C] focus:outline-none"
-                title={showNew ? 'Hide password' : 'View password'}
-              >
-                {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Field 2: Confirm Password (with eye toggle) */}
-          <div>
-            <label className="text-xs font-bold text-[#202B3C] block mb-1">
-              Confirm New Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#737C89] absolute left-3 top-3" />
-              <input
-                required
-                type={showConfirm ? 'text' : 'password'}
-                placeholder="Re-enter your new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full pl-9 pr-10 py-2.5 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-xs text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5]"
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirm(!showConfirm)}
-                className="absolute right-3 top-2.5 text-[#737C89] hover:text-[#202B3C] focus:outline-none"
-                title={showConfirm ? 'Hide password' : 'View password'}
-              >
-                {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Submit Action */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-[#23395D] hover:bg-[#192B47] text-white font-bold text-xs tracking-wide rounded-md shadow transition flex items-center justify-center space-x-2"
-            >
-              <span>{loading ? 'Setting New Password...' : 'Save & Set New Password'}</span>
-            </button>
-          </div>
-        </form>
-
-        <div className="px-6 py-3 bg-[#FCFAF7] border-t border-[#DED8CF] text-center text-[11px] text-[#737C89]">
+        <div className="pt-2 text-center text-[11px] text-slate-400">
           Password will be updated immediately for both web and mobile app.
         </div>
-      </div>
-    </div>
+      </form>
+    </Modal>
   );
 };

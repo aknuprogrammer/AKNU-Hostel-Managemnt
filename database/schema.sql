@@ -149,10 +149,18 @@ CREATE TABLE IF NOT EXISTS students (
     qr_salt VARCHAR(64) NOT NULL,
     qr_status VARCHAR(20) DEFAULT 'active' CHECK (qr_status IN ('active', 'revoked')),
     user_id VARCHAR(50) UNIQUE REFERENCES users(id) ON DELETE SET NULL,
+    admission_fee_status VARCHAR(20) DEFAULT 'unpaid' CHECK (admission_fee_status IN ('paid', 'partial', 'unpaid', 'exempted')),
+    admission_fee_total NUMERIC(10,2) DEFAULT 0,
+    admission_fee_paid NUMERIC(10,2) DEFAULT 0,
+    admission_fee_pending NUMERIC(10,2) DEFAULT 0,
+    admission_fee_payment_date DATE,
+    admission_fee_receipt_no VARCHAR(100),
+    admission_fee_payment_mode VARCHAR(30) DEFAULT 'upi' CHECK (admission_fee_payment_mode IN ('upi', 'bank_challan', 'dd', 'net_banking', 'cash')),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 
 -- 5. ROOM ALLOCATIONS & HISTORY
 CREATE TABLE IF NOT EXISTS student_allocations (

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
 import { StudentProfile } from '../types.js';
-import { X, Printer, RefreshCw, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { X, Printer, RefreshCw, ShieldCheck, CheckCircle2, UserCheck } from 'lucide-react';
 import { apiRequest } from '../services/api.js';
 import { useConfirm } from '../context/ConfirmContext.js';
+import { Button, IconButton } from './ui/index.js';
 
 interface DigitalIdCardModalProps {
   student: StudentProfile | null;
@@ -50,10 +50,10 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
 
   const handleRegenerateQr = async () => {
     const confirmed = await confirm({
-      title: 'Regenerate QR Credential',
-      message: 'Are you sure you want to regenerate this student QR credential? Any previously printed ID cards will no longer be valid.',
-      confirmText: 'Regenerate QR',
-      variant: 'warning'
+      title: 'Sync Biometric Record',
+      message: 'Are you sure you want to resync this resident biometric profile and verification credentials?',
+      confirmText: 'Sync Biometric',
+      variant: 'info'
     });
     if (!confirmed) return;
 
@@ -66,11 +66,11 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
       );
       if (res.success) {
         student.qr_credential_token = res.data.qrToken;
-        setSuccessMsg('QR Credential regenerated! Old QR code is now revoked.');
+        setSuccessMsg('Biometric credentials synchronized successfully!');
         if (onQrUpdated) onQrUpdated();
       }
     } catch (e: any) {
-      await showError('Failed to regenerate QR: ' + e.message);
+      await showError('Failed to sync biometric record: ' + e.message);
     } finally {
       setRefreshing(false);
     }
@@ -93,9 +93,13 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
             <ShieldCheck className="w-4 h-4 text-[#E0AD83]" />
             Official University Credential
           </span>
-          <button onClick={onClose} className="p-1 hover:text-white rounded-md transition text-[#DCE5F1]">
-            <X className="w-5 h-5" />
-          </button>
+          <IconButton
+            icon={<X className="w-5 h-5 text-[#DCE5F1]" />}
+            size="sm"
+            variant="ghost"
+            onClick={onClose}
+            title="Close"
+          />
         </div>
 
         {/* PRINTABLE ID CARD CONTAINER */}
@@ -157,19 +161,27 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
                 </div>
               </div>
 
-              {/* Right Column: Prominent QR Code */}
-              <div className="flex flex-col items-center justify-center p-3.5 bg-white border-2 border-[#23395D] rounded-lg shadow-sm">
-                <QRCodeSVG
-                  value={student.qr_credential_token || student.roll_number}
-                  size={140}
-                  level="H"
-                  includeMargin={false}
-                  fgColor="#0f2744"
-                />
-                <span className="mt-2 text-[9px] font-mono text-[#5C6675] tracking-widest uppercase">
-                  HMAC-SHA256 Token
-                </span>
-                <span className="text-[8px] text-[#737C89] mt-0.5">Scan at Dining Counter</span>
+              {/* Right Column: Student Photo & Biometric Face Verification */}
+              <div className="flex flex-col items-center justify-center p-3 bg-white border-2 border-[#23395D] rounded-lg shadow-sm w-36 shrink-0">
+                {student.photo_url ? (
+                  <img
+                    src={student.photo_url}
+                    alt={student.full_name}
+                    className="w-24 h-24 object-cover rounded-md border border-slate-200 shadow-2xs"
+                  />
+                ) : (
+                  <div className="w-24 h-24 bg-gradient-to-tr from-[#23395D]/10 to-[#92582F]/10 rounded-md border border-slate-200 flex flex-col items-center justify-center text-[#23395D]">
+                    <span className="text-2xl font-black">{student.full_name?.charAt(0) || 'S'}</span>
+                    <span className="text-[9px] font-semibold text-slate-500 mt-1">Photo Enrolled</span>
+                  </div>
+                )}
+                <div className="mt-2 text-center w-full">
+                  <span className="inline-flex items-center justify-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 w-full">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+                    Face Verified
+                  </span>
+                  <span className="text-[8px] text-[#737C89] block mt-0.5">Biometric Mess Access</span>
+                </div>
               </div>
             </div>
           </div>
@@ -184,30 +196,34 @@ export const DigitalIdCardModal: React.FC<DigitalIdCardModalProps> = ({
         )}
 
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <button
+          <Button
+            variant="link"
+            size="xs"
             onClick={handleRegenerateQr}
             disabled={refreshing}
-            className="flex items-center space-x-1.5 text-xs text-slate-600 hover:text-slate-900 font-semibold transition"
-            title="Revokes previous QR and issues a fresh digital credential"
+            leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />}
+            title="Refreshes and syncs biometric verification credential"
+            className="p-0 text-slate-600 hover:text-slate-900 font-semibold"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>{refreshing ? 'Revoking & Generating...' : 'Regenerate QR'}</span>
-          </button>
+            {refreshing ? 'Syncing...' : 'Sync Biometric Record'}
+          </Button>
 
           <div className="flex items-center space-x-2">
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handlePrint}
-              className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-xs font-semibold shadow transition"
+              leftIcon={<Printer className="w-3.5 h-3.5" />}
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Print / Save ID</span>
-            </button>
-            <button
+              Print / Save ID
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={onClose}
-              className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-md text-xs font-semibold transition"
             >
               Close
-            </button>
+            </Button>
           </div>
         </div>
       </div>

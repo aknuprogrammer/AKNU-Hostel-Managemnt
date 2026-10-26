@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { apiRequest } from '../services/api.js';
-import { Modal, Button, Input } from './ui/index.js';
+import { Modal, Button, Input, IconButton } from './ui/index.js';
 import { Mail, KeyRound, Lock, Eye, EyeOff, CheckCircle2, ArrowLeft, Send, ShieldCheck, Clock } from 'lucide-react';
 
 interface ForgotPasswordModalProps {
@@ -161,13 +161,14 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             />
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="xs"
                 onClick={handleClose}
-                className="text-xs font-semibold text-slate-600 hover:text-slate-800"
               >
                 Back to Sign In
-              </button>
+              </Button>
               <Button
                 type="submit"
                 variant="primary"
@@ -191,42 +192,36 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                6-Digit One-Time Password (OTP) <span className="text-rose-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  maxLength={6}
-                  placeholder="Enter 6-digit OTP"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  className="w-full text-center text-xl font-mono tracking-widest font-bold py-2.5 px-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50"
-                  required
-                  autoFocus
-                />
-              </div>
-            </div>
+            <Input
+              label="6-Digit One-Time Password (OTP)"
+              type="text"
+              maxLength={6}
+              placeholder="Enter 6-digit OTP"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+              required
+              autoFocus
+              className="text-center text-xl font-mono tracking-widest font-bold"
+            />
 
-            <div className="relative">
-              <Input
-                label="New Password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="At least 6 characters"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-7 text-slate-400 hover:text-slate-600"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
+            <Input
+              label="New Password"
+              type={showPassword ? 'text' : 'password'}
+              placeholder="At least 6 characters"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+              leftIcon={<Lock className="w-4 h-4 text-slate-400" />}
+              rightIcon={
+                <IconButton
+                  icon={showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => setShowPassword(!showPassword)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                />
+              }
+            />
 
             <Input
               label="Confirm New Password"
@@ -239,28 +234,26 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             />
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="xs"
                 onClick={() => setStep('request')}
-                className="inline-flex items-center text-xs font-medium text-slate-500 hover:text-slate-800"
+                leftIcon={<ArrowLeft className="w-3.5 h-3.5" />}
               >
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
                 Change Email / ID
-              </button>
+              </Button>
 
               <div className="flex items-center space-x-2">
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="xs"
                   disabled={resendCooldown > 0 || loading}
                   onClick={() => handleSendOtp()}
-                  className={`text-xs font-semibold ${
-                    resendCooldown > 0
-                      ? 'text-slate-400 cursor-not-allowed'
-                      : 'text-indigo-600 hover:text-indigo-800'
-                  }`}
                 >
                   {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : 'Resend OTP'}
-                </button>
+                </Button>
 
                 <Button
                   type="submit"

@@ -32,9 +32,10 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
     ref
   ) => {
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+    const hasExplicitWidth = /\bw-\S+/.test(containerClassName);
 
     return (
-      <div className={`w-full ${containerClassName}`}>
+      <div className={`${hasExplicitWidth ? '' : 'w-full'} ${containerClassName}`.trim()}>
         {label && (
           <label
             htmlFor={selectId}

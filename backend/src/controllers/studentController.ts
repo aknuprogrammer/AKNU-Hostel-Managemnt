@@ -214,6 +214,125 @@ export async function getAcademicStructure(req: AuthRequest, res: Response): Pro
   }
 }
 
+export async function getStudentFilterOptions(req: AuthRequest, res: Response): Promise<void> {
+  try {
+    let whereClauses = ['1=1'];
+    let params: any[] = [];
+    let pIdx = 1;
+
+    // RBAC: Strict Gender Wing Isolation (Zero Cross-Wing Leakage)
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+    const wingGender = wing === 'girls' ? 'female' : (wing === 'boys' ? 'male' : null);
+
+    if (wing) {
+      if (req.user?.assignedHostels?.length) {
+        const allowedPlaceholders = req.user.assignedHostels.map((_, i) => `$${pIdx + i}`).join(',');
+        params.push(...req.user.assignedHostels);
+        pIdx += req.user.assignedHostels.length;
+        whereClauses.push(`(sa.hostel_id IN (${allowedPlaceholders}) OR (sa.hostel_id IS NULL AND s.gender = '${wingGender}'))`);
+      } else {
+        whereClauses.push(`(h.category = $${pIdx} OR (sa.hostel_id IS NULL AND s.gender = $${pIdx + 1}))`);
+        params.push(wing, wingGender);
+        pIdx += 2;
+      }
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    // 1. Program Levels actually present in students table
+    const levelsRes = await executeQuery(
+      `SELECT COALESCE(s.program_level, c.program_level, 'UG') as level, COUNT(DISTINCT s.id) as count
+       FROM students s
+       LEFT JOIN courses c ON s.course_id = c.id
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       WHERE ${whereSql}
+       GROUP BY 1
+       ORDER BY count DESC, level ASC`,
+      params
+    );
+
+    // 2. Courses/Degrees actually present in students table
+    const coursesRes = await executeQuery(
+      `SELECT COALESCE(c.id, s.course_id) as id,
+              COALESCE(c.name, 'Unassigned Course') as name,
+              COALESCE(s.program_level, c.program_level, 'UG') as program_level,
+              COUNT(DISTINCT s.id) as count
+       FROM students s
+       LEFT JOIN courses c ON s.course_id = c.id
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       WHERE ${whereSql} AND (c.id IS NOT NULL OR s.course_id IS NOT NULL)
+       GROUP BY 1, 2, 3
+       ORDER BY count DESC, name ASC`,
+      params
+    );
+
+    // 3. Hostels & Allocation states actually present in students table
+    const hostelsRes = await executeQuery(
+      `SELECT 
+         sa.hostel_id as id,
+         h.name as name,
+         h.code as code,
+         COUNT(DISTINCT s.id) as count,
+         (sa.hostel_id IS NULL) as is_unassigned
+       FROM students s
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       WHERE ${whereSql}
+       GROUP BY sa.hostel_id, h.name, h.code
+       ORDER BY is_unassigned DESC, count DESC, h.name ASC`,
+      params
+    );
+
+    // 4. Statuses actually present in students table
+    const statusesRes = await executeQuery(
+      `SELECT s.hostel_status as status, COUNT(DISTINCT s.id) as count
+       FROM students s
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       WHERE ${whereSql}
+       GROUP BY s.hostel_status
+       ORDER BY count DESC`,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: {
+        levels: levelsRes.rows.map((r: any) => ({
+          value: r.level,
+          label: r.level === 'UG' ? 'UG (Undergrad)' : r.level === 'PG' ? 'PG (Postgrad)' : r.level === 'PhD' ? 'Ph.D (Doctoral)' : r.level,
+          count: parseInt(r.count || '0')
+        })),
+        courses: coursesRes.rows.map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          program_level: r.program_level,
+          count: parseInt(r.count || '0')
+        })),
+        hostels: hostelsRes.rows.map((r: any) => ({
+          id: r.id || 'unassigned',
+          name: r.is_unassigned ? 'Unassigned to Bed' : r.name,
+          code: r.code || '',
+          isUnassigned: Boolean(r.is_unassigned),
+          count: parseInt(r.count || '0')
+        })),
+        statuses: statusesRes.rows.map((r: any) => ({
+          value: r.status,
+          label: r.status ? r.status.charAt(0).toUpperCase() + r.status.slice(1) : 'Unknown',
+          count: parseInt(r.count || '0')
+        }))
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 export async function createDepartment(req: AuthRequest, res: Response): Promise<void> {
   try {
     const rawName = String(req.body.name || '').trim();
@@ -444,7 +563,10 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
     departmentId, courseId, programLevel, academicYearId, currentSemester, yearOfStudy,
     phone, email, permanentAddress, guardianName, guardianPhone,
     emergencyContact, hostelId, roomId, bedId, messEligibility,
-    mealEligibilityStart, mealEligibilityEnd, notes
+    mealEligibilityStart, mealEligibilityEnd, notes,
+    // Admission Fee Fields
+    admissionFeeStatus, admissionFeeTotal, admissionFeePaid,
+    admissionFeePaymentDate, admissionFeeReceiptNo, admissionFeePaymentMode
   } = req.body;
 
   if (!rollNumber || !fullName || !phone || !email || !gender) {
@@ -507,6 +629,20 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
     const userId = uuidv4();
     const defaultPasswordHash = await bcrypt.hash('Aknu@2026!', 10);
 
+    // Compute fee details
+    const feeTotal = parseFloat(String(admissionFeeTotal || 0)) || 0;
+    const feePaid = parseFloat(String(admissionFeePaid || 0)) || 0;
+    const feePending = Math.max(0, feeTotal - feePaid);
+    let resolvedFeeStatus = admissionFeeStatus;
+    if (!resolvedFeeStatus) {
+      if (feePaid >= feeTotal && feeTotal > 0) resolvedFeeStatus = 'paid';
+      else if (feePaid > 0) resolvedFeeStatus = 'partial';
+      else resolvedFeeStatus = 'unpaid';
+    }
+    const feePaymentDate = admissionFeePaymentDate || (feePaid > 0 ? new Date().toISOString().split('T')[0] : null);
+    const feePaymentMode = admissionFeePaymentMode || 'upi';
+    const feeReceiptNo = admissionFeeReceiptNo ? String(admissionFeeReceiptNo).trim() : null;
+
     await executeTransaction(async (query) => {
       // 1. Create linked student user account
       await query(
@@ -522,10 +658,13 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
           department_id, course_id, program_level, academic_year_id, year_of_study, current_semester, phone, email,
           permanent_address, guardian_name, guardian_phone, emergency_contact, hostel_status,
           mess_eligibility, meal_eligibility_start, meal_eligibility_end,
-          qr_credential_token, qr_salt, qr_status, user_id, notes
+          qr_credential_token, qr_salt, qr_status, user_id, notes,
+          admission_fee_status, admission_fee_total, admission_fee_paid, admission_fee_pending,
+          admission_fee_payment_date, admission_fee_receipt_no, admission_fee_payment_mode
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, $19, $20, 'active', $21, $22, $23, $24, $25, 'active', $26, $27
+          $16, $17, $18, $19, $20, 'active', $21, $22, $23, $24, $25, 'active', $26, $27,
+          $28, $29, $30, $31, $32, $33, $34
         )`,
         [
           studentId, studentIdCode, rollNumber.trim().toUpperCase(), finalRegNumber,
@@ -533,7 +672,9 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
           departmentId || null, courseId || null, resolvedProgramLevel, academicYearId || null, computedYear || 1, currentSemester || 1,
           phone.trim(), email.trim(), permanentAddress || null, guardianName || null, guardianPhone || null,
           emergencyContact || null, messEligibility !== false, mealEligibilityStart || null, mealEligibilityEnd || null,
-          qrToken, salt, userId, notes || null
+          qrToken, salt, userId, notes || null,
+          resolvedFeeStatus, feeTotal, feePaid, feePending,
+          feePaymentDate, feeReceiptNo, feePaymentMode
         ]
       );
 
@@ -554,7 +695,7 @@ export async function createStudent(req: AuthRequest, res: Response): Promise<vo
 
     res.status(201).json({
       success: true,
-      message: 'Student created successfully with unique signed QR credential',
+      message: 'Student registered successfully for hostel residence & biometric verification',
       data: { id: studentId, studentIdCode, rollNumber, qrToken }
     });
   } catch (err: any) {
@@ -592,7 +733,7 @@ export async function regenerateStudentQr(req: AuthRequest, res: Response): Prom
 
     res.json({
       success: true,
-      message: 'QR credential successfully regenerated. Previous QR tokens are now revoked.',
+      message: 'Biometric verification credential successfully synchronized.',
       data: {
         qrToken: newQrToken,
         qrDataUri
@@ -984,7 +1125,13 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
         currentSemester: semester,
         permanentAddress: rawAddress || null,
         guardianName: getRowVal(row, 'Guardian Name', 'guardian_name', 'Father Name', 'Parent Name') || null,
-        guardianPhone: getRowVal(row, 'Guardian Phone', 'guardian_phone', 'Parent Phone', 'Father Mobile') || null
+        guardianPhone: getRowVal(row, 'Guardian Phone', 'guardian_phone', 'Parent Phone', 'Father Mobile') || null,
+        admissionFeeStatus: getRowVal(row, 'Admission Fee Status', 'Fee Status', 'FeeStatus', 'Admission Status') || 'unpaid',
+        admissionFeeTotal: parseFloat(getRowVal(row, 'Total Admission Fee', 'Hostel Fee', 'Total Fee', 'TotalFee')) || 0,
+        admissionFeePaid: parseFloat(getRowVal(row, 'Fee Paid', 'Paid Amount', 'Amount Paid', 'FeePaid', 'PaidAmount')) || 0,
+        admissionFeePaymentDate: getRowVal(row, 'Payment Date', 'Paid Date', 'Fee Date', 'PaymentDate') || null,
+        admissionFeeReceiptNo: getRowVal(row, 'Receipt Number', 'Receipt No', 'Challan Number', 'ReceiptNo') || null,
+        admissionFeePaymentMode: getRowVal(row, 'Payment Mode', 'Mode', 'PaymentMode') || 'upi'
       });
     }
 
@@ -999,6 +1146,16 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
           const salt = generateQrSalt();
           const qrToken = signStudentQrToken(studentId, item.regNumber, salt);
 
+          const feeTotal = item.admissionFeeTotal || 0;
+          const feePaid = item.admissionFeePaid || 0;
+          const feePending = Math.max(0, feeTotal - feePaid);
+          let feeStatus = item.admissionFeeStatus;
+          if (!feeStatus || feeStatus === 'unpaid') {
+            if (feePaid >= feeTotal && feeTotal > 0) feeStatus = 'paid';
+            else if (feePaid > 0) feeStatus = 'partial';
+            else feeStatus = 'unpaid';
+          }
+
           await query(
             `INSERT INTO users (id, email, password_hash, full_name, phone, role, is_active, is_first_login)
              VALUES ($1, $2, $3, $4, $5, 'student', true, true)`,
@@ -1010,18 +1167,26 @@ export async function bulkImportStudents(req: AuthRequest, res: Response): Promi
               id, student_id_code, roll_number, reg_number, full_name, gender,
               department_id, course_id, program_level, academic_year_id, year_of_study, current_semester,
               phone, email, permanent_address, guardian_name, guardian_phone,
-              hostel_status, mess_eligibility, qr_credential_token, qr_salt, qr_status, user_id
+              hostel_status, mess_eligibility, qr_credential_token, qr_salt, qr_status, user_id,
+              admission_fee_status, admission_fee_total, admission_fee_paid, admission_fee_pending,
+              admission_fee_payment_date, admission_fee_receipt_no, admission_fee_payment_mode
             ) VALUES (
               $1, $2, $3, $4, $5, $6,
               $7, $8, $9, $10, $11, $12,
               $13, $14, $15, $16, $17,
-              'active', true, $18, $19, 'active', $20
+              'active', true, $18, $19, 'active', $20,
+              $21, $22, $23, $24,
+              $25, $26, $27
             )`,
             [
               studentId, studentIdCode, item.rollNumber, item.regNumber, item.fullName, item.gender,
               item.departmentId, item.courseId, item.programLevel, item.academicYearId, item.yearOfStudy, item.currentSemester,
               item.phone, item.email, item.permanentAddress, item.guardianName, item.guardianPhone,
-              qrToken, salt, userId
+              qrToken, salt, userId,
+              feeStatus, feeTotal, feePaid, feePending,
+              item.admissionFeePaymentDate || (feePaid > 0 ? new Date().toISOString().split('T')[0] : null),
+              item.admissionFeeReceiptNo,
+              item.admissionFeePaymentMode || 'upi'
             ]
           );
           importedCount++;
@@ -1065,7 +1230,13 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
     guardianName,
     guardianPhone,
     messEligibility,
-    hostelStatus
+    hostelStatus,
+    admissionFeeStatus,
+    admissionFeeTotal,
+    admissionFeePaid,
+    admissionFeePaymentDate,
+    admissionFeeReceiptNo,
+    admissionFeePaymentMode
   } = req.body;
 
   try {
@@ -1110,6 +1281,10 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
       }
     }
 
+    const feeTotal = admissionFeeTotal !== undefined ? parseFloat(String(admissionFeeTotal)) || 0 : undefined;
+    const feePaid = admissionFeePaid !== undefined ? parseFloat(String(admissionFeePaid)) || 0 : undefined;
+    const feePending = feeTotal !== undefined && feePaid !== undefined ? Math.max(0, feeTotal - feePaid) : undefined;
+
     await executeTransaction(async (query) => {
       // 1. Update students record
       await query(
@@ -1128,8 +1303,15 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           guardian_phone = COALESCE($12, guardian_phone),
           mess_eligibility = COALESCE($13, mess_eligibility),
           hostel_status = COALESCE($14, hostel_status),
+          admission_fee_status = COALESCE($15, admission_fee_status),
+          admission_fee_total = COALESCE($16, admission_fee_total),
+          admission_fee_paid = COALESCE($17, admission_fee_paid),
+          admission_fee_pending = COALESCE($18, admission_fee_pending),
+          admission_fee_payment_date = COALESCE($19, admission_fee_payment_date),
+          admission_fee_receipt_no = COALESCE($20, admission_fee_receipt_no),
+          admission_fee_payment_mode = COALESCE($21, admission_fee_payment_mode),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $15`,
+        WHERE id = $22`,
         [
           fullName ? fullName.trim() : null,
           phone ? phone.trim() : null,
@@ -1145,6 +1327,13 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           guardianPhone !== undefined ? guardianPhone : null,
           typeof messEligibility === 'boolean' ? messEligibility : null,
           hostelStatus || null,
+          admissionFeeStatus || null,
+          feeTotal,
+          feePaid,
+          feePending,
+          admissionFeePaymentDate || null,
+          admissionFeeReceiptNo || null,
+          admissionFeePaymentMode || null,
           id
         ]
       );

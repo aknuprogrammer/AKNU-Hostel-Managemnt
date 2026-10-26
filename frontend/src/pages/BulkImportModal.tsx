@@ -35,8 +35,15 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
         'Gender': 'male',
         'Permanent Address': 'D.No 2-44, Main Road, Kakinada, AP 533001',
         'Guardian Name': 'P. Venkat Rao',
-        'Guardian Phone': '9848011222'
+        'Guardian Phone': '9848011222',
+        'Admission Fee Status': 'paid',
+        'Total Admission Fee': 25000,
+        'Fee Paid': 25000,
+        'Payment Date': '2026-10-20',
+        'Payment Mode': 'bank_challan',
+        'Receipt Number': 'CHL-2026-001'
       },
+
       {
         'Program Level': 'UG',
         'Degree': 'B.Tech',
@@ -321,7 +328,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                     Bulk Import Completed Successfully!
                   </h4>
                   <p className="text-xs text-emerald-800 mt-0.5">
-                    {summary.importedCount} student {summary.importedCount === 1 ? 'record has' : 'records have'} been validated and added to the university master directory with cryptographic QR credentials.
+                    {summary.importedCount} student {summary.importedCount === 1 ? 'record has' : 'records have'} been validated and added to the university master directory for biometric face verification & mess access.
                   </p>
                 </div>
               </div>

@@ -16,7 +16,8 @@ import {
   TableBody,
   TableRow,
   TableHead,
-  TableCell
+  TableCell,
+  Checkbox
 } from '../components/ui/index.js';
 
 export const MessPage: React.FC = () => {
@@ -406,15 +407,17 @@ export const MessPage: React.FC = () => {
                   </span>
 
                   {!isStudent && isMessAdmin && (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="xs"
                       onClick={() => handleOpenAddMenu(m)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1 rounded transition"
+                      leftIcon={<Pencil className="w-3 h-3 text-blue-600" />}
                       title="Edit this meal's menu items"
+                      className="text-blue-600 hover:text-blue-800"
                     >
-                      <Pencil className="w-3 h-3" />
-                      <span>Edit Menu</span>
-                    </button>
+                      Edit Menu
+                    </Button>
                   )}
                 </div>
               </div>
@@ -605,17 +608,12 @@ export const MessPage: React.FC = () => {
             <p className="text-[11px] text-slate-500 mt-1">Separate dishes with commas. You can also specify special beverages or side dishes.</p>
           </div>
 
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="checkbox"
-              id="is_special_feast"
+          <div className="pt-1">
+            <Checkbox
+              label="Mark as Special Feast / Festival Diet (Highlights the card badge)"
               checked={menuForm.isSpecial}
-              onChange={(e) => setMenuForm({ ...menuForm, isSpecial: e.target.checked })}
-              className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+              onChange={(checked) => setMenuForm({ ...menuForm, isSpecial: checked })}
             />
-            <label htmlFor="is_special_feast" className="text-xs text-slate-700 font-medium cursor-pointer select-none">
-              Mark as Special Feast / Festival Diet (Highlights the card badge)
-            </label>
           </div>
 
           <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">

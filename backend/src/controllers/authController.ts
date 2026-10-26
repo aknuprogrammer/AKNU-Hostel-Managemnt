@@ -5,7 +5,7 @@ import { executeQuery } from '../config/database.js';
 import { generateToken } from '../config/jwt.js';
 import { logAudit, AuthRequest } from '../middleware/auth.js';
 import { generateQrSalt, signStudentQrToken } from '../utils/qr.js';
-import { sendOtpEmail } from '../services/emailService.js';
+import { sendOtpEmail, sendStudentActivationOtpEmail } from '../services/emailService.js';
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body;
@@ -92,6 +92,17 @@ export async function login(req: Request, res: Response): Promise<void> {
       );
       if (studentRes.rowCount > 0) {
         studentProfile = studentRes.rows[0];
+
+        // RULE ENFORCEMENT:
+        // A student cannot complete first-time registration / portal sign in until hostel & room are allocated
+        if (!studentProfile.hostel_id && user.is_first_login) {
+          res.status(403).json({
+            success: false,
+            error: 'Hostel accommodation not yet allocated. You can only register and activate your student portal once your hostel and room have been allocated by the warden.'
+          });
+          return;
+        }
+
         if (studentProfile.hostel_category) {
           assignedCategory = studentProfile.hostel_category;
         }
@@ -126,6 +137,7 @@ export async function login(req: Request, res: Response): Promise<void> {
     res.json({
       success: true,
       token,
+      requiresPasswordChange: Boolean(user.is_first_login),
       user: {
         id: user.id,
         email: user.email,
@@ -308,6 +320,23 @@ export async function setupPassword(req: Request, res: Response): Promise<void> 
     if (!match) {
       res.status(400).json({ success: false, error: 'Temporary password is incorrect. Please check your temporary credentials.' });
       return;
+    }
+
+    // RULE ENFORCEMENT: Student cannot register or setup password until hostel is allocated
+    if (user.role === 'student') {
+      const allocCheck = await executeQuery(
+        `SELECT sa.id FROM student_allocations sa 
+         JOIN students s ON s.id = sa.student_id 
+         WHERE s.user_id = $1 AND sa.status = 'active'`,
+        [user.id]
+      );
+      if (allocCheck.rowCount === 0) {
+        res.status(403).json({
+          success: false,
+          error: 'Hostel accommodation not yet allocated. You can only register and activate your student account once your hostel and room have been allocated by the warden.'
+        });
+        return;
+      }
     }
 
     const newHash = await bcrypt.hash(newPassword, 10);
@@ -507,3 +536,243 @@ export async function forgotPasswordVerifyOtp(req: Request, res: Response): Prom
     res.status(500).json({ success: false, error: 'Failed to reset password: ' + err.message });
   }
 }
+
+export async function studentActivationSendOtp(req: Request, res: Response): Promise<void> {
+  const { identifier } = req.body;
+  if (!identifier || !identifier.trim()) {
+    res.status(400).json({ success: false, error: 'Please enter your Student Roll Number or Registration Number' });
+    return;
+  }
+  const cleanId = identifier.trim();
+
+  try {
+    // 1. Find student and linked user
+    const studentRes = await executeQuery(
+      `SELECT s.id as student_id, s.roll_number, s.reg_number, s.full_name, s.email, s.phone,
+              u.id as user_id, u.is_first_login, u.is_active,
+              sa.id as alloc_id, h.name as hostel_name, r.room_number, b.bed_number
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       LEFT JOIN rooms r ON sa.room_id = r.id
+       LEFT JOIN beds b ON sa.bed_id = b.id
+       WHERE UPPER(s.roll_number) = UPPER($1) OR UPPER(s.reg_number) = UPPER($1) OR LOWER(s.email) = LOWER($1)`,
+      [cleanId]
+    );
+
+    if (studentRes.rowCount === 0) {
+      res.status(404).json({
+        success: false,
+        error: `No student record found matching "${cleanId}". Please check your Roll Number or contact the hostel office.`
+      });
+      return;
+    }
+
+    const row = studentRes.rows[0];
+
+    // 2. Gatekeeper rule: Hostel must be allocated first
+    if (!row.alloc_id) {
+      res.status(403).json({
+        success: false,
+        error: `Hostel allocation pending. You have not been allocated a hostel room yet. You can only register and activate your student account once the warden has allocated your hostel, floor, and room.`
+      });
+      return;
+    }
+
+    // 3. Check if already activated
+    if (!row.is_first_login) {
+      res.status(400).json({
+        success: false,
+        error: `Your account (${row.roll_number}) is already registered and activated. Please sign in directly on the login page or use "Forgot Password?" if you forgot your credentials.`
+      });
+      return;
+    }
+
+    // 4. Check user status
+    if (!row.is_active) {
+      res.status(403).json({
+        success: false,
+        error: 'Your student account is currently deactivated. Please contact the Chief Warden office.'
+      });
+      return;
+    }
+
+    // 5. Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Invalidate existing unused OTPs
+    await executeQuery(
+      `UPDATE password_reset_otps SET used = true WHERE user_id = $1 AND used = false`,
+      [row.user_id]
+    );
+
+    const otpId = `act-${uuidv4().slice(0, 8)}`;
+    await executeQuery(
+      `INSERT INTO password_reset_otps (id, user_id, email, otp, expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [otpId, row.user_id, row.email, otp, expiresAt]
+    );
+
+    // 6. Send activation email
+    const emailSent = await sendStudentActivationOtpEmail(row.email, row.full_name, otp, {
+      hostelName: row.hostel_name,
+      roomNumber: row.room_number,
+      bedNumber: row.bed_number
+    });
+
+    if (!emailSent) {
+      res.status(500).json({
+        success: false,
+        error: 'Unable to send OTP email at this time. Please check your internet connection or contact the Chief Warden.'
+      });
+      return;
+    }
+
+    // Mask email for display
+    const [local, domain] = (row.email || '').split('@');
+    const maskedLocal = local.length > 2
+      ? `${local[0]}***${local[local.length - 1]}`
+      : `${local[0]}***`;
+    const maskedEmail = `${maskedLocal}@${domain}`;
+
+    res.json({
+      success: true,
+      message: `Registration OTP has been sent to your registered email (${maskedEmail}).`,
+      maskedEmail,
+      identifier: row.roll_number,
+      studentName: row.full_name,
+      regNumber: row.reg_number,
+      hostelName: row.hostel_name,
+      roomNumber: row.room_number,
+      bedNumber: row.bed_number
+    });
+  } catch (err: any) {
+    console.error('[Student Activation Send OTP Error]', err);
+    res.status(500).json({ success: false, error: 'Internal server error: ' + err.message });
+  }
+}
+
+export async function studentActivationVerifyAndRegister(req: Request, res: Response): Promise<void> {
+  const { identifier, otp, password } = req.body;
+  if (!identifier || !otp || !password) {
+    res.status(400).json({ success: false, error: 'Roll number, 6-digit OTP, and password are required' });
+    return;
+  }
+
+  if (password.length < 6) {
+    res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
+    return;
+  }
+
+  const cleanId = identifier.trim();
+  const cleanOtp = otp.trim();
+
+  try {
+    const studentRes = await executeQuery(
+      `SELECT s.*, u.id as user_id, u.is_first_login, u.is_active,
+              sa.id as alloc_id, h.name as hostel_name, h.id as hostel_id, h.code as hostel_code, h.category as hostel_category, r.room_number, b.bed_number
+       FROM students s
+       JOIN users u ON s.user_id = u.id
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       LEFT JOIN rooms r ON sa.room_id = r.id
+       LEFT JOIN beds b ON sa.bed_id = b.id
+       WHERE UPPER(s.roll_number) = UPPER($1) OR UPPER(s.reg_number) = UPPER($1) OR LOWER(s.email) = LOWER($1)`,
+      [cleanId]
+    );
+
+    if (studentRes.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'Student record not found' });
+      return;
+    }
+
+    const studentProfile = studentRes.rows[0];
+
+    // Gatekeeper rule: Hostel must be allocated first
+    if (!studentProfile.alloc_id) {
+      res.status(403).json({
+        success: false,
+        error: 'Hostel accommodation not yet allocated. You can only register and activate your student account once your hostel and room have been allocated.'
+      });
+      return;
+    }
+
+    // Verify OTP
+    const otpRes = await executeQuery(
+      `SELECT id, expires_at, used
+       FROM password_reset_otps
+       WHERE user_id = $1 AND otp = $2 AND used = false
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [studentProfile.user_id, cleanOtp]
+    );
+
+    if (otpRes.rowCount === 0) {
+      res.status(400).json({ success: false, error: 'Invalid or expired OTP. Please verify the 6 digits or request a new code.' });
+      return;
+    }
+
+    const otpRecord = otpRes.rows[0];
+    if (new Date() > new Date(otpRecord.expires_at)) {
+      res.status(400).json({ success: false, error: 'This OTP has expired. Please request a new activation OTP.' });
+      return;
+    }
+
+    // Hash password & activate account
+    const newHash = await bcrypt.hash(password, 10);
+    await executeQuery(
+      `UPDATE users SET password_hash = $1, is_first_login = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [newHash, studentProfile.user_id]
+    );
+    await executeQuery(`UPDATE password_reset_otps SET used = true WHERE id = $1`, [otpRecord.id]);
+
+    // Ensure QR token is signed and active
+    if (!studentProfile.qr_credential_token || !studentProfile.qr_credential_token.startsWith('aknu_v1.')) {
+      const salt = generateQrSalt();
+      const qrToken = signStudentQrToken(studentProfile.id, studentProfile.reg_number, salt);
+      await executeQuery(
+        `UPDATE students SET qr_credential_token = $1, qr_salt = $2, qr_status = 'active' WHERE id = $3`,
+        [qrToken, salt, studentProfile.id]
+      );
+      studentProfile.qr_credential_token = qrToken;
+      studentProfile.qr_salt = salt;
+      studentProfile.qr_status = 'active';
+    }
+
+    await logAudit(studentProfile.user_id, 'STUDENT_REGISTRATION_ACTIVATED', 'students', studentProfile.id, { rollNumber: studentProfile.roll_number, hostel: studentProfile.hostel_name, room: studentProfile.room_number }, req);
+
+    // Generate JWT token
+    const token = generateToken({
+      id: studentProfile.user_id,
+      email: studentProfile.email,
+      role: 'student',
+      fullName: studentProfile.full_name,
+      assignedHostels: [],
+      assignedCategory: studentProfile.hostel_category || 'all',
+      studentId: studentProfile.id
+    });
+
+    res.json({
+      success: true,
+      message: 'Account successfully registered and activated! Welcome to AKNU Hostel Resident Portal.',
+      token,
+      user: {
+        id: studentProfile.user_id,
+        email: studentProfile.email,
+        fullName: studentProfile.full_name,
+        phone: studentProfile.phone,
+        role: 'student',
+        roleDisplay: 'Student Resident',
+        assignedHostels: [],
+        assignedCategory: studentProfile.hostel_category || 'all',
+        student: studentProfile
+      }
+    });
+  } catch (err: any) {
+    console.error('[Student Activation Verify Error]', err);
+    res.status(500).json({ success: false, error: 'Failed to complete registration: ' + err.message });
+  }
+}
+

@@ -32,7 +32,8 @@ import {
   TableHead,
   TableCell,
   TableLoading,
-  TableEmpty
+  TableEmpty,
+  Checkbox
 } from '../components/ui/index.js';
 
 interface AssignedHostel {
@@ -538,21 +539,25 @@ export const StaffRecordsPage: React.FC = () => {
               </label>
               {hostels.length > 0 && (
                 <div className="flex items-center space-x-2 text-[11px]">
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={() => setSelectedHostelIds(hostels.map((h) => h.id))}
-                    className="text-[#23395D] hover:underline font-semibold"
+                    className="p-0 h-auto font-semibold"
                   >
                     Select All
-                  </button>
+                  </Button>
                   <span className="text-slate-300">•</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={() => setSelectedHostelIds([])}
-                    className="text-slate-500 hover:underline"
+                    className="p-0 h-auto text-slate-500 hover:text-slate-700"
                   >
                     Clear All
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -566,25 +571,30 @@ export const StaffRecordsPage: React.FC = () => {
                 {hostels.map((h) => {
                   const isSelected = selectedHostelIds.includes(h.id);
                   return (
-                    <label
+                    <div
                       key={h.id}
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
+                        } else {
+                          setSelectedHostelIds((prev) => [...prev, h.id]);
+                        }
+                      }}
                       className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
                         isSelected
                           ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
                       }`}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isSelected}
-                        onChange={(e) => {
-                          if (e.target.checked) {
+                        onChange={(checked) => {
+                          if (checked) {
                             setSelectedHostelIds((prev) => [...prev, h.id]);
                           } else {
                             setSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
                           }
                         }}
-                        className="mt-0.5 rounded text-[#23395D] focus:ring-[#23395D] border-slate-300"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-bold truncate leading-tight">{h.name}</div>
@@ -603,7 +613,7 @@ export const StaffRecordsPage: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
@@ -706,21 +716,25 @@ export const StaffRecordsPage: React.FC = () => {
               </label>
               {hostels.length > 0 && (
                 <div className="flex items-center space-x-2 text-[11px]">
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={() => setEditSelectedHostelIds(hostels.map((h) => h.id))}
-                    className="text-[#23395D] hover:underline font-semibold"
+                    className="p-0 h-auto font-semibold"
                   >
                     Select All
-                  </button>
+                  </Button>
                   <span className="text-slate-300">•</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={() => setEditSelectedHostelIds([])}
-                    className="text-slate-500 hover:underline"
+                    className="p-0 h-auto text-slate-500 hover:text-slate-700"
                   >
                     Clear All
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
@@ -734,25 +748,30 @@ export const StaffRecordsPage: React.FC = () => {
                 {hostels.map((h) => {
                   const isSelected = editSelectedHostelIds.includes(h.id);
                   return (
-                    <label
+                    <div
                       key={h.id}
+                      onClick={() => {
+                        if (isSelected) {
+                          setEditSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
+                        } else {
+                          setEditSelectedHostelIds((prev) => [...prev, h.id]);
+                        }
+                      }}
                       className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
                         isSelected
                           ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
                       }`}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isSelected}
-                        onChange={(e) => {
-                          if (e.target.checked) {
+                        onChange={(checked) => {
+                          if (checked) {
                             setEditSelectedHostelIds((prev) => [...prev, h.id]);
                           } else {
                             setEditSelectedHostelIds((prev) => prev.filter((id) => id !== h.id));
                           }
                         }}
-                        className="mt-0.5 rounded text-[#23395D] focus:ring-[#23395D] border-slate-300"
                       />
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-bold truncate leading-tight">{h.name}</div>
@@ -771,7 +790,7 @@ export const StaffRecordsPage: React.FC = () => {
                           )}
                         </div>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>

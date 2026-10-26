@@ -8,7 +8,9 @@ export type ButtonVariant =
   | 'outline'
   | 'danger'
   | 'success'
-  | 'ghost';
+  | 'ghost'
+  | 'subtle'
+  | 'link';
 
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -16,9 +18,11 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
+  loading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
   fullWidth?: boolean;
+  isFullWidth?: boolean;
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
@@ -35,7 +39,11 @@ const variantStyles: Record<ButtonVariant, string> = {
   success:
     'bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-sm active:scale-[0.98]',
   ghost:
-    'bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-transparent active:scale-[0.98]'
+    'bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-transparent active:scale-[0.98]',
+  subtle:
+    'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-2xs active:scale-[0.98]',
+  link:
+    'bg-transparent hover:underline text-[#92582F] hover:text-[#754522] border-transparent shadow-none !p-0 font-semibold'
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -52,9 +60,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       variant = 'primary',
       size = 'md',
       isLoading = false,
+      loading = false,
       leftIcon,
       rightIcon,
       fullWidth = false,
+      isFullWidth = false,
       disabled,
       className = '',
       type = 'button',
@@ -62,7 +72,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const isDisabled = disabled || isLoading;
+    const isBusy = isLoading || loading;
+    const isExpanded = fullWidth || isFullWidth;
+    const isDisabled = disabled || isBusy;
 
     return (
       <button
@@ -71,13 +83,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={isDisabled}
         className={`inline-flex items-center justify-center font-medium transition duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${
           variantStyles[variant]
-        } ${sizeStyles[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+        } ${sizeStyles[size]} ${isExpanded ? 'w-full' : ''} ${className}`}
         {...props}
       >
-        {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
-        {!isLoading && leftIcon && <span className="shrink-0">{leftIcon}</span>}
+        {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+        {!isBusy && leftIcon && <span className="shrink-0">{leftIcon}</span>}
         {children && <span>{children}</span>}
-        {!isLoading && rightIcon && <span className="shrink-0">{rightIcon}</span>}
+        {!isBusy && rightIcon && <span className="shrink-0">{rightIcon}</span>}
       </button>
     );
   }

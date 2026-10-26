@@ -7,6 +7,7 @@ import {
   regenerateStudentQr,
   bulkImportStudents,
   getAcademicStructure,
+  getStudentFilterOptions,
   createDepartment,
   createCourse,
   generateRegistrationNumberHandler,
@@ -19,6 +20,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const router = Router();
 
 router.get('/meta/academic-structure', authenticate, getAcademicStructure);
+router.get('/meta/filter-options', authenticate, getStudentFilterOptions);
 router.get('/meta/generate-reg-number', authenticate, generateRegistrationNumberHandler);
 router.post('/meta/departments', authenticate, createDepartment);
 router.post('/meta/courses', authenticate, createCourse);

@@ -40,6 +40,13 @@ export async function initializeSchema() {
     await executeQuery("ALTER TABLE courses ADD COLUMN IF NOT EXISTS program_level VARCHAR(20) DEFAULT 'UG'");
     await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS program_level VARCHAR(20) DEFAULT 'UG'");
     await executeQuery("ALTER TABLE user_hostel_assignments ADD COLUMN IF NOT EXISTS role VARCHAR(50)");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_status VARCHAR(20) DEFAULT 'unpaid'");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_total NUMERIC(10,2) DEFAULT 0");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_paid NUMERIC(10,2) DEFAULT 0");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_pending NUMERIC(10,2) DEFAULT 0");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_payment_date DATE");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_receipt_no VARCHAR(100)");
+    await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS admission_fee_payment_mode VARCHAR(30) DEFAULT 'upi'");
   } catch (e) {
     // Ignore if column already exists
   }

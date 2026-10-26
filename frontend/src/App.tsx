@@ -7,6 +7,7 @@ import { RoleSwitcherModal } from './components/RoleSwitcherModal.js';
 import { DigitalIdCardModal } from './components/DigitalIdCardModal.js';
 import { SetupPasswordModal } from './components/SetupPasswordModal.js';
 import { ForgotPasswordModal } from './components/ForgotPasswordModal.js';
+import { StudentActivationModal } from './components/StudentActivationModal.js';
 import { AknuLogo } from './components/AknuLogo.js';
 import { DashboardPage } from './pages/DashboardPage.js';
 import { MealScannerPage } from './pages/MealScannerPage.js';
@@ -19,7 +20,8 @@ import { AccountsPage } from './pages/AccountsPage.js';
 import { SecurityPage } from './pages/SecurityPage.js';
 import { StaffRecordsPage } from './pages/StaffRecordsPage.js';
 
-import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, GraduationCap } from 'lucide-react';
+import { Button, Input, IconButton } from './components/ui/index.js';
 
 const VALID_TABS: ActiveTab[] = [
   'dashboard',
@@ -48,7 +50,7 @@ const getTabFromUrl = (): ActiveTab => {
 };
 
 export const App: React.FC = () => {
-  const { user, loading, login, quickSwitchRole } = useAuth();
+  const { user, loading, login, quickSwitchRole, refreshUser } = useAuth();
   const [activeTab, setActiveTabState] = useState<ActiveTab>(getTabFromUrl);
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);
@@ -101,6 +103,7 @@ export const App: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
+  const [showStudentActivationModal, setShowStudentActivationModal] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -213,7 +216,7 @@ export const App: React.FC = () => {
               </div>
 
               <p className="text-sm text-[#DCE5F1] leading-relaxed">
-                Centralized boys' and girls' hostel allocation system, biometric-verifiable cryptographic meal QR credentials, and university residential governance.
+                Centralized boys' and girls' hostel allocation system, biometric face verification meal attendance, and university residential governance.
               </p>
             </div>
 
@@ -241,72 +244,75 @@ export const App: React.FC = () => {
               )}
 
               <form onSubmit={handleLoginFormSubmit} className="mt-6 space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-[#202B3C] block mb-1.5">
-                    Email Address or Roll Number
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-5 h-5 text-[#737C89] absolute left-3.5 top-3.5" />
-                    <input
-                      required
-                      type="text"
-                      placeholder="e.g. staff@gmail.com, 22CSE042, or admin@aknu.edu.in"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-sm text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5] focus:ring-2 focus:ring-[#5276A5]/20 shadow-xs"
-                    />
-                  </div>
-                </div>
+                <Input
+                  required
+                  type="text"
+                  label="Email Address or Roll Number"
+                  placeholder="e.g. staff@gmail.com, 22CSE042, or admin@aknu.edu.in"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  leftIcon={<Mail className="w-5 h-5 text-slate-400" />}
+                />
 
                 <div>
-                  <label className="text-sm font-bold text-[#202B3C] block mb-1.5">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Lock className="w-5 h-5 text-[#737C89] absolute left-3.5 top-3.5" />
-                    <input
-                      required
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter account password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pl-11 pr-11 py-3 bg-[#FCFAF7] border border-[#DED8CF] rounded-md text-sm text-[#202B3C] placeholder-[#737C89] focus:outline-none focus:border-[#5276A5] focus:ring-2 focus:ring-[#5276A5]/20 shadow-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-3.5 text-[#737C89] hover:text-[#202B3C] focus:outline-none transition p-0.5 rounded"
-                      title={showPassword ? "Hide password" : "Show password"}
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                    >
-                      {showPassword ? (
-                        <EyeOff className="w-5 h-5" />
-                      ) : (
-                        <Eye className="w-5 h-5" />
-                      )}
-                    </button>
-                  </div>
+                  <Input
+                    required
+                    type={showPassword ? 'text' : 'password'}
+                    label="Password"
+                    placeholder="Enter account password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    leftIcon={<Lock className="w-5 h-5 text-slate-400" />}
+                    rightIcon={
+                      <IconButton
+                        icon={showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        size="xs"
+                        variant="ghost"
+                        onClick={() => setShowPassword(!showPassword)}
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      />
+                    }
+                  />
                   <div className="flex justify-end pt-1.5">
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="xs"
                       onClick={() => setShowForgotModal(true)}
-                      className="text-xs font-semibold text-[#5276A5] hover:text-[#23395D] hover:underline transition"
                     >
                       Forgot Password?
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <button
+                <Button
                   type="submit"
-                  disabled={loggingIn}
-                  className="w-full py-3.5 bg-[#23395D] hover:bg-[#192B47] text-white font-extrabold text-sm tracking-wide rounded-md shadow-md hover:shadow-lg transition transform active:scale-[0.99] flex items-center justify-center space-x-2 mt-2"
+                  variant="primary"
+                  size="lg"
+                  isFullWidth
+                  loading={loggingIn}
+                  rightIcon={<ArrowRight className="w-4 h-4" />}
                 >
-                  <span>{loggingIn ? 'Authenticating...' : 'Sign In to Portal'}</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
+                  Sign In to Portal
+                </Button>
 
-
+                {/* Step 3: Student Onboarding Activation Prompt */}
+                <div className="pt-4 mt-4 border-t border-[#DED8CF] text-center space-y-2">
+                  <div className="flex items-center justify-center gap-1.5 text-xs text-[#5C6675]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    <span>Allocated a hostel room and logging in for the first time?</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    isFullWidth
+                    size="md"
+                    onClick={() => setShowStudentActivationModal(true)}
+                    leftIcon={<GraduationCap className="w-4 h-4 text-amber-700" />}
+                  >
+                    First-Time Student Registration & Activation
+                  </Button>
+                </div>
               </form>
             </div>
           </div>
@@ -331,6 +337,18 @@ export const App: React.FC = () => {
           initialIdentifier={email}
           onSuccess={() => {
             setShowForgotModal(false);
+          }}
+        />
+
+        <StudentActivationModal
+          isOpen={showStudentActivationModal}
+          onClose={() => setShowStudentActivationModal(false)}
+          initialIdentifier={email}
+          onActivationSuccess={async () => {
+            setShowStudentActivationModal(false);
+            await refreshUser();
+            setActiveTabState('mess');
+            window.history.replaceState({ tab: 'mess' }, '', '/mess');
           }}
         />
       </div>

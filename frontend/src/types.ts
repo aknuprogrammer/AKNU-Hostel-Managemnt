@@ -53,7 +53,15 @@ export interface StudentProfile {
   allocation_id?: string;
   emergency_contact?: string;
   qrDataUri?: string;
+  admission_fee_status?: 'paid' | 'partial' | 'unpaid' | 'exempted';
+  admission_fee_total?: number;
+  admission_fee_paid?: number;
+  admission_fee_pending?: number;
+  admission_fee_payment_date?: string;
+  admission_fee_receipt_no?: string;
+  admission_fee_payment_mode?: 'upi' | 'bank_challan' | 'dd' | 'net_banking' | 'cash';
 }
+
 
 export interface Hostel {
   id: string;
