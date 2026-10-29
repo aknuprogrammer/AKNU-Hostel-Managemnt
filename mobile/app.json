@@ -29,7 +29,15 @@
         {
           "cameraPermission": "Allow AKNU Hostels to access your camera to scan student meal QR credentials."
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow AKNU Hostels to access your photos to upload a resident profile photo for dining biometric registration.",
+          "cameraPermission": "Allow AKNU Hostels to access your camera to capture your live photo for dining biometric registration."
+        }
+      ],
+      "expo-status-bar"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { apiRequest } from '../services/api.js';
 import { Hostel } from '../types.js';
 import {
@@ -9,8 +9,7 @@ import {
   DoorClosed,
   Sparkles,
   UserMinus,
-  Pencil,
-  RefreshCw
+  Pencil
 } from 'lucide-react';
 import {
   Button,
@@ -29,6 +28,64 @@ import {
   AllocateBedModal
 } from '../components/hostels/index.js';
 
+interface HostelCardProps {
+  hostel: Hostel;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+}
+
+const HostelCard = React.memo<HostelCardProps>(({ hostel, isSelected, onSelect }) => {
+  const occRate = hostel.total_beds && hostel.total_beds > 0
+    ? Math.round(((hostel.occupied_beds || 0) / hostel.total_beds) * 100)
+    : 0;
+
+  return (
+    <div
+      onClick={() => onSelect(hostel.id)}
+      className={`p-5 rounded-lg border cursor-pointer relative overflow-hidden select-none transition-colors duration-150 ${
+        isSelected
+          ? 'bg-gradient-to-br from-white to-blue-50/50 border-[#23395D] ring-2 ring-[#23395D]/20 shadow-sm'
+          : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-2xs'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <Badge variant={hostel.category === 'boys' ? 'primary' : 'neutral'}>
+          {hostel.code}
+        </Badge>
+        <span
+          className={`text-[10px] capitalize font-bold px-2 py-0.5 rounded ${
+            hostel.category === 'girls'
+              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+              : 'bg-blue-50 text-blue-700 border border-blue-200'
+          }`}
+        >
+          {hostel.category === 'girls' ? 'Girls Wing' : 'Boys Wing'}
+        </span>
+      </div>
+
+      <h3 className="font-bold text-sm text-slate-800 mt-2">{hostel.name}</h3>
+      <p className="text-xs text-slate-500 mt-0.5">Capacity: {hostel.total_capacity} beds</p>
+
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-xs text-slate-600 font-semibold mb-1">
+          <span>Occupancy</span>
+          <span>
+            {hostel.occupied_beds || 0} / {hostel.total_beds || 0}
+          </span>
+        </div>
+        <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+          <div
+            className="bg-[#23395D] h-full rounded-full transition-all"
+            style={{ width: `${occRate}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+HostelCard.displayName = 'HostelCard';
+
 export const HostelsPage: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
@@ -38,11 +95,9 @@ export const HostelsPage: React.FC = () => {
   const [hostels, setHostels] = useState<Hostel[]>([]);
   const [selectedHostel, setSelectedHostel] = useState<string>('');
   
-  // Cache rooms per hostel to provide instant, seamless switching with 0 page re-renders
+  // Cache all rooms across all hostels in memory for 100% instant switching with zero re-fetches
   const [roomsCache, setRoomsCache] = useState<Record<string, any[]>>({});
   const [initialLoading, setInitialLoading] = useState(true);
-  const [roomsLoading, setRoomsLoading] = useState(false);
-  const [isRefreshingRooms, setIsRefreshingRooms] = useState(false);
 
   // Modal visibility & targets
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -56,67 +111,54 @@ export const HostelsPage: React.FC = () => {
   const [showAddBedModal, setShowAddBedModal] = useState(false);
   const [addBedDefaultRoomId, setAddBedDefaultRoomId] = useState<string>('');
 
-  // Derived rooms with beds for currently selected hostel
+  // Derived rooms with beds for currently selected hostel - instantaneous memory lookup
   const roomsWithBeds = useMemo(() => {
     return roomsCache[selectedHostel] || [];
   }, [roomsCache, selectedHostel]);
 
-  useEffect(() => {
-    fetchHostels();
-  }, []);
-
-  useEffect(() => {
-    if (selectedHostel) {
-      const hasCache = !!roomsCache[selectedHostel];
-      fetchRooms(selectedHostel, hasCache);
-    }
-  }, [selectedHostel]);
-
-  const fetchHostels = async (isSilent = false) => {
+  // Load all hostels and all rooms simultaneously on page mount
+  const fetchAllData = useCallback(async (isSilent = false) => {
     try {
       if (!isSilent) setInitialLoading(true);
-      const res = await apiRequest<{ success: boolean; data: Hostel[] }>('/hostels');
-      if (res.success) {
-        setHostels(res.data);
-        if (res.data.length > 0) {
-          setSelectedHostel((prev) => (prev && res.data.some((h) => h.id === prev) ? prev : res.data[0].id));
+      const [hostelsRes, roomsRes] = await Promise.all([
+        apiRequest<{ success: boolean; data: Hostel[] }>('/hostels'),
+        apiRequest<{ success: boolean; data: any[] }>('/hostels/rooms/beds')
+      ]);
+
+      if (hostelsRes.success) {
+        setHostels(hostelsRes.data);
+        if (hostelsRes.data.length > 0) {
+          setSelectedHostel((prev) => (prev && hostelsRes.data.some((h) => h.id === prev) ? prev : hostelsRes.data[0].id));
         } else {
           setSelectedHostel('');
         }
+      }
+
+      if (roomsRes.success) {
+        const cache: Record<string, any[]> = {};
+        for (const item of roomsRes.data) {
+          if (!cache[item.hostel_id]) {
+            cache[item.hostel_id] = [];
+          }
+          cache[item.hostel_id].push(item);
+        }
+        setRoomsCache(cache);
       }
     } catch (e) {
       console.error(e);
     } finally {
       if (!isSilent) setInitialLoading(false);
     }
-  };
+  }, []);
 
-  const fetchRooms = async (hostelId = selectedHostel, isSilent = false) => {
-    if (!hostelId) return;
-    const hasCache = !!roomsCache[hostelId];
-    if (!isSilent && !hasCache) {
-      setRoomsLoading(true);
-    } else {
-      setIsRefreshingRooms(true);
-    }
+  useEffect(() => {
+    fetchAllData();
+  }, [fetchAllData]);
 
-    try {
-      const res = await apiRequest<{ success: boolean; data: any[] }>('/hostels/rooms/beds?hostelId=' + hostelId);
-      if (res.success) {
-        setRoomsCache((prev) => ({ ...prev, [hostelId]: res.data }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setRoomsLoading(false);
-      setIsRefreshingRooms(false);
-    }
-  };
-
-  const handleSelectHostel = (id: string) => {
-    if (selectedHostel === id) return;
-    setSelectedHostel(id);
-  };
+  // Pure state update on card selection: 0 network requests, 0 re-fetch effects, 0 page re-renders
+  const handleSelectHostel = useCallback((id: string) => {
+    setSelectedHostel((prev) => (prev === id ? prev : id));
+  }, []);
 
   const handleOpenEditHostel = (h: Hostel) => {
     setEditingHostel(h);
@@ -140,7 +182,7 @@ export const HostelsPage: React.FC = () => {
       });
       if (res.success) {
         await showSuccess(res.message);
-        await fetchHostels();
+        await fetchAllData(true);
       }
     } catch (err: any) {
       await showError('Delete failed: ' + err.message);
@@ -166,8 +208,7 @@ export const HostelsPage: React.FC = () => {
       });
       if (res.success) {
         await showSuccess(res.message);
-        fetchRooms(selectedHostel, true);
-        fetchHostels(true);
+        fetchAllData(true);
       }
     } catch (err: any) {
       await showError('Vacate failed: ' + err.message);
@@ -197,8 +238,7 @@ export const HostelsPage: React.FC = () => {
       });
       if (res.success) {
         await showSuccess(res.message || 'Bed deleted successfully.');
-        fetchRooms(selectedHostel, true);
-        fetchHostels(true);
+        fetchAllData(true);
       }
     } catch (err: any) {
       await showError('Delete bed failed: ' + (err.message || 'An error occurred'));
@@ -325,48 +365,14 @@ export const HostelsPage: React.FC = () => {
         </div>
       ) : hostels.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5">
-          {hostels.map((h) => {
-            const isSelected = selectedHostel === h.id;
-            const occRate = h.total_beds && h.total_beds > 0 ? Math.round(((h.occupied_beds || 0) / h.total_beds) * 100) : 0;
-
-            return (
-              <div
-                key={h.id}
-                onClick={() => handleSelectHostel(h.id)}
-                className={`p-5 rounded-lg border transition cursor-pointer relative overflow-hidden ${
-                  isSelected
-                    ? 'bg-gradient-to-br from-white to-blue-50/50 border-aknu-blue ring-2 ring-blue-500/20 shadow-md'
-                    : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <Badge variant={h.category === 'boys' ? 'primary' : 'neutral'}>
-                    {h.code}
-                  </Badge>
-                  <span className={`text-[10px] capitalize font-bold px-2 py-0.5 rounded ${
-                    h.category === 'girls'
-                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                      : 'bg-blue-50 text-blue-700 border border-blue-200'
-                  }`}>
-                    {h.category === 'girls' ? 'Girls Wing' : 'Boys Wing'}
-                  </span>
-                </div>
-
-                <h3 className="font-bold text-sm text-slate-800 mt-2">{h.name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Capacity: {h.total_capacity} beds</p>
-
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-xs text-slate-600 font-semibold mb-1">
-                    <span>Occupancy</span>
-                    <span>{h.occupied_beds || 0} / {h.total_beds || 0}</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-aknu-blue h-full rounded-full transition-all" style={{ width: `${occRate}%` }} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {hostels.map((h) => (
+            <HostelCard
+              key={h.id}
+              hostel={h}
+              isSelected={selectedHostel === h.id}
+              onSelect={handleSelectHostel}
+            />
+          ))}
         </div>
       ) : (
         <div className="bg-white rounded-lg p-10 border border-slate-200 text-center space-y-3">
@@ -397,11 +403,6 @@ export const HostelsPage: React.FC = () => {
                 <Badge variant={selectedHostelObj.category === 'boys' ? 'primary' : 'neutral'}>
                   {selectedHostelObj.code}
                 </Badge>
-                {isRefreshingRooms && (
-                  <span title="Updating live beds...">
-                    <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />
-                  </span>
-                )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 Live bed inventory for {selectedHostelObj.name} ({selectedHostelObj.total_capacity} total beds)
@@ -454,22 +455,7 @@ export const HostelsPage: React.FC = () => {
             </div>
           </div>
 
-          {roomsLoading && roomsWithBeds.length === 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                <div key={n} className="p-4 rounded-md border border-slate-200 bg-white shadow-2xs animate-pulse">
-                  <div className="flex items-center justify-between">
-                    <div className="h-4 bg-slate-200 rounded w-24" />
-                    <div className="h-4 bg-slate-200 rounded w-16" />
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="h-3 bg-slate-100 rounded w-3/4" />
-                    <div className="h-2.5 bg-slate-100 rounded w-1/2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : roomsWithBeds.length > 0 ? (
+          {roomsWithBeds.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               {roomsWithBeds.map((rb, idx) => (
                 <div
@@ -564,7 +550,7 @@ export const HostelsPage: React.FC = () => {
         isOpen={showCreateHostelModal}
         onClose={() => setShowCreateHostelModal(false)}
         userWing={userWing as 'boys' | 'girls' | null}
-        onSuccess={fetchHostels}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <EditHostelModal
@@ -575,7 +561,7 @@ export const HostelsPage: React.FC = () => {
         }}
         hostel={editingHostel}
         userWing={userWing as 'boys' | 'girls' | null}
-        onSuccess={fetchHostels}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <AddRoomModal
@@ -583,10 +569,7 @@ export const HostelsPage: React.FC = () => {
         onClose={() => setShowAddRoomModal(false)}
         hostelId={selectedHostel}
         hostelName={selectedHostelObj?.name}
-        onSuccess={() => {
-          fetchRooms(selectedHostel, true);
-          fetchHostels(true);
-        }}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <TransferModal
@@ -594,10 +577,7 @@ export const HostelsPage: React.FC = () => {
         onClose={() => setShowTransferModal(false)}
         hostels={hostels}
         initialHostelId={selectedHostel}
-        onSuccess={() => {
-          fetchRooms(selectedHostel, true);
-          fetchHostels(true);
-        }}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <SmartAllocationModal
@@ -605,10 +585,7 @@ export const HostelsPage: React.FC = () => {
         onClose={() => setShowBatchModal(false)}
         userWing={userWing as 'boys' | 'girls' | null}
         hostels={hostels}
-        onSuccess={() => {
-          fetchRooms(selectedHostel, true);
-          fetchHostels(true);
-        }}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <AllocateBedModal
@@ -616,10 +593,7 @@ export const HostelsPage: React.FC = () => {
         onClose={() => setShowAllocateModal(false)}
         bed={targetBedToAllocate}
         hostel={selectedHostelObj || null}
-        onSuccess={() => {
-          fetchRooms(selectedHostel, true);
-          fetchHostels(true);
-        }}
+        onSuccess={() => fetchAllData(true)}
       />
 
       <AddBedModal
@@ -628,10 +602,7 @@ export const HostelsPage: React.FC = () => {
         hostelName={selectedHostelObj?.name}
         rooms={uniqueRoomsInHostel}
         defaultRoomId={addBedDefaultRoomId}
-        onSuccess={() => {
-          fetchRooms(selectedHostel, true);
-          fetchHostels(true);
-        }}
+        onSuccess={() => fetchAllData(true)}
       />
     </div>
   );

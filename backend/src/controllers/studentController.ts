@@ -1236,7 +1236,8 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
     admissionFeePaid,
     admissionFeePaymentDate,
     admissionFeeReceiptNo,
-    admissionFeePaymentMode
+    admissionFeePaymentMode,
+    photoUrl
   } = req.body;
 
   try {
@@ -1310,8 +1311,9 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           admission_fee_payment_date = COALESCE($19, admission_fee_payment_date),
           admission_fee_receipt_no = COALESCE($20, admission_fee_receipt_no),
           admission_fee_payment_mode = COALESCE($21, admission_fee_payment_mode),
+          photo_url = COALESCE($22, photo_url),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $22`,
+        WHERE id = $23`,
         [
           fullName ? fullName.trim() : null,
           phone ? phone.trim() : null,
@@ -1334,6 +1336,7 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
           admissionFeePaymentDate || null,
           admissionFeeReceiptNo || null,
           admissionFeePaymentMode || null,
+          photoUrl !== undefined ? photoUrl : null,
           id
         ]
       );

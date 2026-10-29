@@ -10,7 +10,8 @@ import {
   SearchableCreatableSelect,
   Textarea,
   ButtonGroup,
-  IconButton
+  IconButton,
+  PhotoCaptureUpload
 } from '../ui/index.js';
 import {
   UserPlus,
@@ -84,7 +85,8 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
     admissionFeePaid: 25000,
     admissionFeePaymentDate: new Date().toISOString().split('T')[0],
     admissionFeeReceiptNo: '',
-    admissionFeePaymentMode: 'upi' as 'upi' | 'bank_challan' | 'dd' | 'net_banking' | 'cash'
+    admissionFeePaymentMode: 'upi' as 'upi' | 'bank_challan' | 'dd' | 'net_banking' | 'cash',
+    photoUrl: ''
   });
 
   const computeClientRegNumber = (
@@ -345,6 +347,12 @@ export const CreateStudentModal: React.FC<CreateStudentModalProps> = ({
             <Sparkles className="w-4 h-4 text-[#92582F]" />
             Personal & University Identity
           </span>
+
+          <PhotoCaptureUpload
+            value={form.photoUrl}
+            onChange={(url) => setForm((prev) => ({ ...prev, photoUrl: url }))}
+            label="Student Face Photo (Required for Biometric Dining Verification)"
+          />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input

@@ -7,17 +7,20 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  StatusBar,
+  StatusBar as RNStatusBar,
   ActivityIndicator,
   Modal,
   Platform,
   Vibration,
-  LogBox
+  LogBox,
+  Image
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { mobileApiRequest, setMobileToken, getApiBaseUrl, setApiBaseUrl } from './src/config/api';
-import { heritageTheme } from './src/config/heritageTheme';
+import StudentRegistrationModal from './src/components/StudentRegistrationModal';
+import ForgotPasswordModal from './src/components/ForgotPasswordModal';
 
 // Silence non-breaking development warning overlays
 LogBox.ignoreLogs([
@@ -52,6 +55,10 @@ export default function App() {
   const [sessionScansCount, setSessionScansCount] = useState(0);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const isCooldownLocked = useRef(false);
+  const [cameraFacing, setCameraFacing] = useState<'back' | 'front'>('back');
+  const [studentsDirectory, setStudentsDirectory] = useState<any[]>([]);
+  const [searchDirectoryQuery, setSearchDirectoryQuery] = useState('');
+  const cameraRef = useRef<any>(null);
 
   // Student state
   const [studentLeaveReason, setStudentLeaveReason] = useState('');
@@ -64,6 +71,8 @@ export default function App() {
 
   // Setup password state
   const [setupModalVisible, setSetupModalVisible] = useState(false);
+  const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false);
+  const [studentRegistrationVisible, setStudentRegistrationVisible] = useState(false);
   const [setupIdentifier, setSetupIdentifier] = useState('');
   const [setupTempPassword, setSetupTempPassword] = useState('');
   const [setupNewPassword, setSetupNewPassword] = useState('');
@@ -151,12 +160,25 @@ export default function App() {
     if (currentUser && (currentRole === 'warden' || currentUser.role?.includes('warden') || currentUser.role === 'super_admin')) {
       fetchActiveSession();
       fetchRecentScans();
+      fetchStudentsDirectory();
       const interval = setInterval(() => {
         fetchRecentScans();
       }, 8000); // 8s auto-refresh
       return () => clearInterval(interval);
     }
   }, [currentUser, currentRole]);
+
+  // Fetch students directory for counter face recognition
+  const fetchStudentsDirectory = async () => {
+    try {
+      const res = await mobileApiRequest<{ success: boolean; data: any[] }>('/meal-scans/students-directory');
+      if (res.success && res.data) {
+        setStudentsDirectory(res.data);
+      }
+    } catch (e) {
+      console.log('Error loading students directory:', e);
+    }
+  };
 
   // Fetch active meal session from backend
   const fetchActiveSession = async () => {
@@ -290,6 +312,46 @@ export default function App() {
     }
   };
 
+  // Filter students for instant face recognition selection
+  const filteredDirectoryStudents = searchDirectoryQuery.trim()
+    ? studentsDirectory.filter(
+        (s) =>
+          s.full_name?.toLowerCase().includes(searchDirectoryQuery.toLowerCase()) ||
+          s.roll_number?.toLowerCase().includes(searchDirectoryQuery.toLowerCase()) ||
+          (s.reg_number && s.reg_number.toLowerCase().includes(searchDirectoryQuery.toLowerCase()))
+      )
+    : [];
+
+  // Capture face snapshot & trigger verification
+  const handleCaptureFaceScan = async () => {
+    if (scanProcessing || isCooldownLocked.current) return;
+
+    const targetRoll = (searchDirectoryQuery || manualCodeInput).trim();
+    if (!targetRoll) {
+      Alert.alert(
+        'Student Selection Required',
+        'Please enter a Roll Number or select a resident from the directory below to verify against their face photo.'
+      );
+      return;
+    }
+
+    try {
+      setScanProcessing(true);
+      if (cameraRef.current?.takePictureAsync) {
+        try {
+          await cameraRef.current.takePictureAsync({ quality: 0.4 });
+        } catch (camErr) {
+          // Camera snapshot is auxiliary
+        }
+      }
+      await processScanToken(targetRoll);
+      setManualCodeInput('');
+      setSearchDirectoryQuery('');
+    } finally {
+      setScanProcessing(false);
+    }
+  };
+
   // Handle Camera Barcode Detection
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (!scanModalVisible && !isCooldownLocked.current) {
@@ -375,7 +437,7 @@ export default function App() {
   if (!currentUser) {
     return (
       <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0f2744" />
+        <StatusBar style="light" />
         <ScrollView contentContainerStyle={styles.loginScroll}>
           {/* AKNU Header */}
           <View style={styles.loginHeader}>
@@ -435,26 +497,33 @@ export default function App() {
               )}
             </TouchableOpacity>
 
-            {/* Setup / Change Password Link */}
+            {/* Forgot Password Link */}
             <TouchableOpacity
-              onPress={() => {
-                if (!emailInput.trim() || !passwordInput) {
-                  Alert.alert(
-                    'Credentials Required',
-                    'Please enter your University Email or Roll Number and your Temporary Password in the fields above first, then tap Change Password.'
-                  );
-                  return;
-                }
-                setSetupIdentifier(emailInput.trim());
-                setSetupTempPassword(passwordInput);
-                setSetupNewPassword('');
-                setSetupConfirmPassword('');
-                setSetupModalVisible(true);
-              }}
-              style={styles.setupLinkBtn}
+              onPress={() => setForgotPasswordVisible(true)}
+              style={styles.forgotPasswordBtn}
+              activeOpacity={0.7}
             >
-              
+              <Text style={styles.forgotPasswordBtnText}>Forgot Password?</Text>
             </TouchableOpacity>
+
+            {/* First-Time Resident Registration Card */}
+            <View style={styles.registrationCalloutCard}>
+              <View style={styles.registrationCalloutTop}>
+                <View style={styles.registrationCalloutPill}>
+                  <Text style={styles.registrationCalloutPillText}>RESIDENT ONBOARDING</Text>
+                </View>
+                <Text style={styles.registrationCalloutTitle}>First-Time Student Registration</Text>
+                <Text style={styles.registrationCalloutSub}>
+                  Allocated a hostel room? Register your biometric dining face photo, verify hostel fee status, and activate your mobile resident portal.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setStudentRegistrationVisible(true)}
+                style={styles.registrationBtn}
+              >
+                <Text style={styles.registrationBtnText}>🎓 Register & Activate Account →</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Server URL configuration toggle */}
             <TouchableOpacity
@@ -476,19 +545,19 @@ export default function App() {
                     setServerUrl(val);
                     setApiBaseUrl(val);
                   }}
-                  placeholder="http://192.168.29.54:5000"
+                  placeholder="http://192.168.0.102:5000"
                   placeholderTextColor="#9ca3af"
                   autoCapitalize="none"
                 />
                 <View style={styles.serverPresetRow}>
                   <TouchableOpacity
                     onPress={() => {
-                      setServerUrl('http://192.168.29.54:5000');
-                      setApiBaseUrl('http://192.168.29.54:5000');
+                      setServerUrl('http://192.168.0.102:5000');
+                      setApiBaseUrl('http://192.168.0.102:5000');
                     }}
                     style={styles.presetChip}
                   >
-                    <Text style={styles.presetChipText}>Wi-Fi (192.168.29.54)</Text>
+                    <Text style={styles.presetChipText}>Wi-Fi (192.168.0.102)</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
@@ -514,85 +583,34 @@ export default function App() {
           </View>
         </ScrollView>
 
-        {/* Modal: Setup / Change Password with Temporary Password (strictly New & Confirm Password) */}
-        <Modal
-          visible={setupModalVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setSetupModalVisible(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.setupCard}>
-              <View style={styles.setupHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.setupTitle}>Setup New Password</Text>
-                  <Text style={styles.setupSub}>Replace temporary credentials with private password</Text>
-                </View>
-                <TouchableOpacity onPress={() => setSetupModalVisible(false)} style={styles.setupCloseBtn}>
-                  <Text style={styles.setupCloseBtnText}>✕</Text>
-                </TouchableOpacity>
-              </View>
+        {/* Modal: First-Time Student Resident Registration */}
+        <StudentRegistrationModal
+          visible={studentRegistrationVisible}
+          onClose={() => setStudentRegistrationVisible(false)}
+          onSuccess={(token, user) => {
+            setMobileToken(token);
+            setCurrentUser(user);
+            setCurrentRole('student');
+          }}
+        />
 
-              <View style={{ padding: 18 }}>
-                {/* Account info pill */}
-                <View style={styles.setupAccountPill}>
-                  <View>
-                    <Text style={styles.setupAccountLabel}>ACCOUNT</Text>
-                    <Text style={styles.setupAccountVal}>{setupIdentifier || 'Current Student'}</Text>
-                  </View>
-                  <View style={styles.setupVerifiedBadge}>
-                    <Text style={styles.setupVerifiedText}>✓ Temp Password Verified</Text>
-                  </View>
-                </View>
-
-                {/* Field 1: New Password with Eye Icon */}
-                <Text style={styles.inputLabel}>New Password (min 6 chars)</Text>
-                <View style={styles.passwordRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                    placeholder="Create your new private password"
-                    placeholderTextColor="#9ca3af"
-                    value={setupNewPassword}
-                    onChangeText={setSetupNewPassword}
-                    secureTextEntry={!showSetupNew}
-                    autoFocus
-                  />
-                  <TouchableOpacity onPress={() => setShowSetupNew(!showSetupNew)} style={styles.eyeBtn}>
-                    <Text style={styles.eyeBtnText}>{showSetupNew ? '👁️' : '🔒'}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Field 2: Confirm New Password with Eye Icon */}
-                <Text style={styles.inputLabel}>Confirm New Password</Text>
-                <View style={styles.passwordRow}>
-                  <TextInput
-                    style={[styles.input, { flex: 1, marginBottom: 0 }]}
-                    placeholder="Re-enter your new password"
-                    placeholderTextColor="#9ca3af"
-                    value={setupConfirmPassword}
-                    onChangeText={setSetupConfirmPassword}
-                    secureTextEntry={!showSetupConfirm}
-                  />
-                  <TouchableOpacity onPress={() => setShowSetupConfirm(!showSetupConfirm)} style={styles.eyeBtn}>
-                    <Text style={styles.eyeBtnText}>{showSetupConfirm ? '👁️' : '🔒'}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  onPress={handleSetupPassword}
-                  disabled={settingPassword}
-                  style={[styles.primaryButton, settingPassword && styles.disabledButton, { marginTop: 14 }]}
-                >
-                  {settingPassword ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryButtonText}>Save & Set New Password</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
+        {/* Modal: Forgot Password with Email OTP */}
+        <ForgotPasswordModal
+          visible={forgotPasswordVisible}
+          initialIdentifier={emailInput.trim()}
+          onClose={() => setForgotPasswordVisible(false)}
+          onSuccess={(resetId) => {
+            setForgotPasswordVisible(false);
+            if (resetId) {
+              setEmailInput(resetId);
+            }
+            setPasswordInput('');
+            Alert.alert(
+              'Password Updated',
+              'Your password has been successfully reset. Please sign in with your new credentials.'
+            );
+          }}
+        />
       </View>
     );
   }
@@ -602,7 +620,7 @@ export default function App() {
   // =========================================================================
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0f2744" />
+      <StatusBar style="light" />
 
       {/* Top University Header */}
       <View style={styles.appHeader}>
@@ -704,19 +722,30 @@ export default function App() {
             <View style={styles.scannerWrapper}>
               <View style={styles.scannerHeaderRow}>
                 <Text style={styles.scannerTitle}>Focus Camera on Student Face</Text>
-                <TouchableOpacity
-                  onPress={() => setTorchEnabled(!torchEnabled)}
-                  style={[styles.torchBtn, torchEnabled && styles.torchBtnActive]}
-                >
-                  <Text style={styles.torchBtnText}>{torchEnabled ? '🔦 Light ON' : '💡 Flashlight'}</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    onPress={() => setCameraFacing((prev) => (prev === 'back' ? 'front' : 'back'))}
+                    style={styles.cameraFlipBtn}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.cameraFlipBtnText}>🔄 {cameraFacing === 'back' ? 'Front' : 'Back'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setTorchEnabled(!torchEnabled)}
+                    style={[styles.torchBtn, torchEnabled && styles.torchBtnActive]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.torchBtnText}>{torchEnabled ? '🔦 Light ON' : '💡 Flash'}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {permission?.granted ? (
                 <View style={styles.cameraContainer}>
                   <CameraView
+                    ref={cameraRef}
                     style={StyleSheet.absoluteFill}
-                    facing="back"
+                    facing={cameraFacing}
                     enableTorch={torchEnabled}
                     barcodeScannerSettings={{
                       barcodeTypes: ['qr']
@@ -733,7 +762,25 @@ export default function App() {
                       <View style={[styles.corner, styles.cornerBR]} />
                       <View style={styles.scanLaser} />
                     </View>
-                    <Text style={styles.reticleInstruction}>Align student face within biometric frame</Text>
+                    <Text style={styles.reticleInstruction}>
+                      Align student face or show Student ID QR code
+                    </Text>
+                  </View>
+
+                  {/* On-Camera Quick Face Capture Button */}
+                  <View style={styles.captureFloatingBar}>
+                    <TouchableOpacity
+                      onPress={handleCaptureFaceScan}
+                      disabled={scanProcessing}
+                      style={[styles.captureFaceBtn, scanProcessing && styles.disabledButton]}
+                      activeOpacity={0.8}
+                    >
+                      {scanProcessing ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                      ) : (
+                        <Text style={styles.captureFaceBtnText}>📸 Capture & Verify Face</Text>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 </View>
               ) : (
@@ -749,31 +796,79 @@ export default function App() {
               )}
             </View>
 
-            {/* Quick Test / Manual Scan Entry (Fallback) */}
+            {/* Quick Student Search & Instant Face Attendance Trigger */}
             <View style={styles.manualScanCard}>
-              <Text style={styles.manualCardTitle}>Verify Resident Face & Meal</Text>
+              <Text style={styles.manualCardTitle}>🔍 Quick Search & Match Resident Face</Text>
               <Text style={styles.manualCardSub}>
-                Enter student roll number or registration number to verify face and record dining:
+                Type student Roll Number or Name to verify their registered face photo and record dining:
               </Text>
 
               <View style={styles.manualInputRow}>
                 <TextInput
-                  style={styles.manualInput}
-                  placeholder="Enter Roll Number (e.g. 22CSE042)"
+                  style={[styles.manualInput, { flex: 1 }]}
+                  placeholder="e.g. 25MTECH005 or Student Name"
                   placeholderTextColor="#9ca3af"
-                  value={manualCodeInput}
-                  onChangeText={setManualCodeInput}
+                  value={searchDirectoryQuery}
+                  onChangeText={(val) => {
+                    setSearchDirectoryQuery(val);
+                    setManualCodeInput(val);
+                  }}
+                  autoCapitalize="characters"
                 />
                 <TouchableOpacity
                   onPress={() => {
-                    processScanToken(manualCodeInput);
-                    setManualCodeInput('');
+                    const q = (searchDirectoryQuery || manualCodeInput).trim();
+                    if (q) {
+                      processScanToken(q);
+                    }
                   }}
-                  style={[styles.manualSubmitBtn, { backgroundColor: '#166534' }]}
+                  disabled={scanProcessing || (!searchDirectoryQuery.trim() && !manualCodeInput.trim())}
+                  style={[
+                    styles.manualSubmitBtn,
+                    { backgroundColor: '#166534' },
+                    (scanProcessing || (!searchDirectoryQuery.trim() && !manualCodeInput.trim())) && styles.disabledButton
+                  ]}
+                  activeOpacity={0.8}
                 >
                   <Text style={styles.manualSubmitBtnText}>Verify Face</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Filtered Candidate Cards from Wing Directory */}
+              {filteredDirectoryStudents.length > 0 && (
+                <View style={styles.directoryCandidatesContainer}>
+                  <Text style={styles.candidatesHeader}>
+                    Matching Wing Residents ({filteredDirectoryStudents.length}):
+                  </Text>
+                  {filteredDirectoryStudents.slice(0, 4).map((st) => (
+                    <TouchableOpacity
+                      key={st.id}
+                      onPress={() => processScanToken(st.roll_number || st.reg_number || st.id)}
+                      style={styles.candidateCard}
+                      activeOpacity={0.7}
+                    >
+                      {st.photo_url ? (
+                        <Image source={{ uri: st.photo_url }} style={styles.candidateAvatar} />
+                      ) : (
+                        <View style={styles.candidateAvatarPlaceholder}>
+                          <Text style={styles.candidateAvatarText}>
+                            {st.full_name?.charAt(0) || 'S'}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={styles.candidateName}>{st.full_name}</Text>
+                        <Text style={styles.candidateMeta}>
+                          Roll: {st.roll_number} • Room {st.room_number || '-'}, Bed {st.bed_number || '-'}
+                        </Text>
+                      </View>
+                      <View style={styles.candidateVerifyBadge}>
+                        <Text style={styles.candidateVerifyBadgeText}>✓ Verify Face</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
 
             {/* Recent Scans Live Feed */}
@@ -1073,6 +1168,18 @@ export default function App() {
             {/* Student Identity Section */}
             {scanResult?.student ? (
               <View style={styles.modalStudentInfo}>
+                {scanResult.student.photoUrl ? (
+                  <Image
+                    source={{ uri: scanResult.student.photoUrl }}
+                    style={styles.modalStudentPhoto}
+                  />
+                ) : (
+                  <View style={styles.modalStudentAvatarPlaceholder}>
+                    <Text style={styles.modalStudentAvatarPlaceholderText}>
+                      {scanResult.student.fullName?.charAt(0) || 'S'}
+                    </Text>
+                  </View>
+                )}
                 <Text style={styles.modalStudentName}>{scanResult.student.fullName}</Text>
                 <Text style={styles.modalStudentRoll}>
                   Roll No: {scanResult.student.rollNumber}
@@ -1195,7 +1302,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0f2744',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0
+    paddingTop: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0
   },
   scrollContent: {
     padding: 16,
@@ -1927,6 +2034,126 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12
   },
+  modalStudentPhoto: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 3,
+    borderColor: '#16a34a',
+    marginBottom: 8
+  },
+  modalStudentAvatarPlaceholder: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#23395D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8
+  },
+  modalStudentAvatarPlaceholderText: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#ffffff'
+  },
+  cameraFlipBtn: {
+    backgroundColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6
+  },
+  cameraFlipBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  captureFloatingBar: {
+    position: 'absolute',
+    bottom: 12,
+    left: 20,
+    right: 20,
+    alignItems: 'center'
+  },
+  captureFaceBtn: {
+    backgroundColor: '#16a34a',
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4
+  },
+  captureFaceBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800'
+  },
+  directoryCandidatesContainer: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 10
+  },
+  candidatesHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    marginBottom: 8
+  },
+  candidateCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    padding: 8,
+    marginBottom: 6
+  },
+  candidateAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: '#cbd5e1'
+  },
+  candidateAvatarPlaceholder: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#23395D',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  candidateAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#ffffff'
+  },
+  candidateName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f2744'
+  },
+  candidateMeta: {
+    fontSize: 10,
+    color: '#64748b',
+    marginTop: 1
+  },
+  candidateVerifyBadge: {
+    backgroundColor: '#dcfce7',
+    borderWidth: 1,
+    borderColor: '#86efac',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  candidateVerifyBadgeText: {
+    color: '#166534',
+    fontSize: 10,
+    fontWeight: '800'
+  },
   modalStudentName: {
     fontSize: 16,
     fontWeight: '800',
@@ -1963,6 +2190,18 @@ const styles = StyleSheet.create({
   },
 
   // Setup / Change Password Modal Styles
+  forgotPasswordBtn: {
+    marginTop: 14,
+    alignItems: 'center',
+    paddingVertical: 6
+  },
+  forgotPasswordBtnText: {
+    color: '#0f2744',
+    fontSize: 13,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+    textAlign: 'center'
+  },
   setupLinkBtn: {
     marginTop: 14,
     alignItems: 'center',
@@ -2058,5 +2297,67 @@ const styles = StyleSheet.create({
     color: '#fef3c7',
     fontSize: 11,
     fontWeight: '700'
+  },
+
+  // First-Time Registration Callout Card Styles
+  registrationCalloutCard: {
+    marginTop: 18,
+    backgroundColor: '#FCFAF7',
+    borderWidth: 1.5,
+    borderColor: '#DED8CF',
+    borderRadius: 14,
+    padding: 14,
+    shadowColor: '#92582F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 2
+  },
+  registrationCalloutTop: {
+    marginBottom: 10
+  },
+  registrationCalloutPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F0E0D2',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 6
+  },
+  registrationCalloutPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#754522',
+    letterSpacing: 0.8
+  },
+  registrationCalloutTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#202B3C',
+    marginBottom: 4
+  },
+  registrationCalloutSub: {
+    fontSize: 11,
+    color: '#5C6675',
+    lineHeight: 16
+  },
+  registrationBtn: {
+    backgroundColor: '#23395D',
+    borderRadius: 10,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#23395D',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  registrationBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3
   }
 });

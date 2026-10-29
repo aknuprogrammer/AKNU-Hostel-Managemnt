@@ -84,6 +84,8 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
       );
       if (matching.length > 0 && (!batchTargetHostel || !matching.some((h) => h.id === batchTargetHostel))) {
         setBatchTargetHostel(matching[0].id);
+        setBatchTargetFloor('all');
+        setBatchTargetRoom('all');
       }
     }
   }, [isOpen, batchGender, hostels]);
@@ -91,7 +93,7 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
   // Fetch rooms for destination hostel
   useEffect(() => {
     if (isOpen && batchTargetHostel) {
-      apiRequest<{ success: boolean; data: any[] }>(`/hostels/${batchTargetHostel}/rooms`)
+      apiRequest<{ success: boolean; data: any[] }>(`/hostels/rooms/beds?hostelId=${batchTargetHostel}`)
         .then((res) => {
           if (res.success && res.data) {
             setTargetHostelRooms(res.data);
@@ -107,7 +109,8 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
   const targetFloors = useMemo(() => {
     const map = new Map<string, { id: string; floorNumber: number | string; name: string; vacantBeds: number }>();
     targetHostelRooms.forEach((r) => {
-      const flKey = String(r.floor_number ?? 1);
+      const flNum = r.floor_number ?? 1;
+      const flKey = String(flNum);
       const isVacant = r.bed_status === 'vacant';
       const existing = map.get(flKey);
       if (existing) {
@@ -115,8 +118,8 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
       } else {
         map.set(flKey, {
           id: r.floor_id || flKey,
-          floorNumber: r.floor_number ?? 1,
-          name: r.floor_name || `Floor ${r.floor_number ?? 1}`,
+          floorNumber: flNum,
+          name: r.floor_name || `Floor ${flNum}`,
           vacantBeds: isVacant ? 1 : 0
         });
       }
@@ -131,9 +134,10 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
       { id: string; roomNumber: string; floorNumber: number | string; vacantBeds: number; capacity: number }
     >();
     targetHostelRooms.forEach((r) => {
+      const flNum = r.floor_number ?? 1;
       if (
         batchTargetFloor !== 'all' &&
-        String(r.floor_number) !== String(batchTargetFloor) &&
+        String(flNum) !== String(batchTargetFloor) &&
         r.floor_id !== batchTargetFloor
       ) {
         return;
@@ -146,7 +150,7 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
         map.set(r.room_id, {
           id: r.room_id,
           roomNumber: r.room_number,
-          floorNumber: r.floor_number ?? 1,
+          floorNumber: flNum,
           vacantBeds: isVacant ? 1 : 0,
           capacity: r.capacity || 2
         });
@@ -235,12 +239,18 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
         }
       });
 
+      const resultData = res.data || (res as any).summary;
       if (res.success) {
-        setBatchResult(res.data);
+        const count = resultData?.allocatedCount ?? selectedStudentIds.length;
         onSuccess();
+        onClose();
+        setBatchResult(null);
+        await showSuccess(
+          res.message || `Successfully allocated ${count} student${count === 1 ? '' : 's'} sequentially.`
+        );
       }
     } catch (err: any) {
-      await showError('Smart allocation failed: ' + err.message);
+      await showError('Smart allocation failed: ' + (err.message || 'An unexpected error occurred.'));
     } finally {
       setAllocatingBatch(false);
     }
@@ -481,7 +491,11 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
                     </label>
                     <select
                       value={batchTargetHostel}
-                      onChange={(e) => setBatchTargetHostel(e.target.value)}
+                      onChange={(e) => {
+                        setBatchTargetHostel(e.target.value);
+                        setBatchTargetFloor('all');
+                        setBatchTargetRoom('all');
+                      }}
                       className="w-full text-xs rounded-md border border-indigo-300 bg-white p-2 focus:border-indigo-600 focus:outline-none font-semibold text-slate-800"
                     >
                       {matchingHostels.map((h) => {

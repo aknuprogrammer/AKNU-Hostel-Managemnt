@@ -521,7 +521,7 @@ export const StaffRecordsPage: React.FC = () => {
 
           <div>
             <Input
-              label="Email Address (Gmail / University Email)"
+              label="Email Address"
               type="email"
               placeholder="e.g. warden@gmail.com or staff@aknu.edu.in"
               value={email}
@@ -701,7 +701,7 @@ export const StaffRecordsPage: React.FC = () => {
             />
 
             <Input
-              label="Email Address (Gmail / University Email)"
+              label="Email Address"
               type="email"
               placeholder="e.g. warden@gmail.com or staff@aknu.edu.in"
               value={editEmail}

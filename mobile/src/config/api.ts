@@ -1,7 +1,25 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 
-// Default to Wi-Fi host IP for physical device testing, with 10.0.2.2 for Android emulator
-let customBaseUrl = 'http://192.168.0.104:5000/api/v1';
+// Automatically detect host IP from Metro bundle URL when running on physical device via Expo Go,
+// with fallback to current local Wi-Fi IP
+function resolveDefaultHost(): string {
+  try {
+    const scriptURL: string = NativeModules?.SourceCode?.scriptURL || '';
+    if (scriptURL && scriptURL.includes('://')) {
+      const hostPart = scriptURL.split('://')[1]?.split(':')[0];
+      if (hostPart && hostPart !== 'localhost' && hostPart !== '127.0.0.1') {
+        return hostPart;
+      }
+    }
+  } catch (e) {
+    // Fallback if NativeModules is unavailable
+  }
+  return Platform.OS === 'android' && !Platform.isTV
+    ? '192.168.0.102'
+    : 'localhost';
+}
+
+let customBaseUrl = `http://${resolveDefaultHost()}:5000/api/v1`;
 
 export function getApiBaseUrl(): string {
   return customBaseUrl;

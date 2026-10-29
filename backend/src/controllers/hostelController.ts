@@ -752,8 +752,8 @@ export async function batchAllocateCohort(req: AuthRequest, res: Response): Prom
              fl.id as floor_id, fl.floor_number, bl.id as block_id, bl.name as block_name
       FROM beds b
       JOIN rooms r ON b.room_id = r.id
-      JOIN floors fl ON r.floor_id = fl.id
-      JOIN blocks bl ON fl.block_id = bl.id
+      LEFT JOIN floors fl ON r.floor_id = fl.id
+      LEFT JOIN blocks bl ON fl.block_id = bl.id
       WHERE r.hostel_id = $1
         AND b.status = 'vacant'
         AND r.status = 'active'
@@ -770,7 +770,7 @@ export async function batchAllocateCohort(req: AuthRequest, res: Response): Prom
       bedSql += ` AND (r.id = $${bedParams.length} OR r.room_number = $${bedParams.length})`;
     }
 
-    bedSql += ` ORDER BY bl.code ASC, fl.floor_number ASC, r.room_number ASC, b.bed_number ASC`;
+    bedSql += ` ORDER BY bl.code ASC NULLS LAST, fl.floor_number ASC NULLS LAST, r.room_number ASC, b.bed_number ASC`;
 
     const vacantBedsRes = await executeQuery(bedSql, bedParams);
     const vacantBeds = vacantBedsRes.rows;
@@ -828,14 +828,17 @@ export async function batchAllocateCohort(req: AuthRequest, res: Response): Prom
       hostelName: hostel.name
     }, req);
 
+    const summaryData = {
+      allocatedCount: allocatedPairs.length,
+      remainingUnallocated: validStudents.length - allocatedPairs.length,
+      allocatedPairs
+    };
+
     res.json({
       success: true,
       message: `Successfully allocated ${allocatedPairs.length} students to ${hostel.name}.`,
-      summary: {
-        allocatedCount: allocatedPairs.length,
-        remainingUnallocated: validStudents.length - allocatedPairs.length,
-        allocatedPairs
-      }
+      data: summaryData,
+      summary: summaryData
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

@@ -64,6 +64,7 @@ export async function sendOtpEmail(toEmail: string, recipientName: string, otp: 
       </div>
     `;
 
+    console.log(`\n🔑 [PASSWORD RESET OTP] Email: ${toEmail} | Name: ${recipientName} | OTP: ${otp}\n`);
     const info = await transporter.sendMail({
       from: fromAddress,
       to: toEmail,
@@ -76,6 +77,10 @@ export async function sendOtpEmail(toEmail: string, recipientName: string, otp: 
     return true;
   } catch (error) {
     console.error(`[Email Service Error] Failed to send email to ${toEmail}:`, error);
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[DEV MODE] Allowing password reset to proceed with console OTP: ${otp}`);
+      return true;
+    }
     return false;
   }
 }
@@ -152,6 +157,7 @@ export async function sendStudentActivationOtpEmail(
       </div>
     `;
 
+    console.log(`\n🔑 [STUDENT ACTIVATION OTP] Email: ${toEmail} | Name: ${recipientName} | OTP: ${otp}\n`);
     const info = await transporter.sendMail({
       from: fromAddress,
       to: toEmail,
@@ -164,7 +170,12 @@ export async function sendStudentActivationOtpEmail(
     return true;
   } catch (error) {
     console.error(`[Email Service Error] Failed to send activation OTP to ${toEmail}:`, error);
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(`[DEV MODE] Allowing registration flow to proceed with console OTP: ${otp}`);
+      return true;
+    }
     return false;
   }
 }
+
 

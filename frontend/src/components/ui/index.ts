@@ -17,3 +17,4 @@ export * from './StatCard.js';
 export * from './Card.js';
 export * from './SearchableCreatableSelect.js';
 export * from './ConfirmDialog.js';
+export * from './PhotoCaptureUpload.js';

@@ -88,7 +88,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       >
         {isBusy && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
         {!isBusy && leftIcon && <span className="shrink-0">{leftIcon}</span>}
-        {children && <span>{children}</span>}
+        {children && <span className="inline-flex items-center gap-1.5 whitespace-nowrap">{children}</span>}
         {!isBusy && rightIcon && <span className="shrink-0">{rightIcon}</span>}
       </button>
     );

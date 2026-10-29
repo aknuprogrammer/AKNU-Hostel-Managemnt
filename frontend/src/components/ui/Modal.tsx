@@ -102,7 +102,7 @@ export const Modal: React.FC<ModalProps> = ({
         className={`relative bg-white rounded-lg shadow-2xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] z-10 overscroll-contain ${sizeClasses[size]} transition-all`}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#192B47] bg-[#23395D] text-white">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#192B47] bg-[#23395D] text-white">
           <div className="flex items-center space-x-3 min-w-0">
             {icon && (
               <div className="p-2 bg-[#192B47] rounded-md text-[#E0AD83] border border-[#354D70] shrink-0">
@@ -129,7 +129,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Modal Body */}
         <div
-          className="p-6 overflow-y-auto overscroll-contain no-scrollbar space-y-4"
+          className="p-4 sm:p-6 overflow-y-auto overscroll-contain no-scrollbar space-y-4"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {children}
@@ -137,7 +137,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Modal Footer */}
         {footer && (
-          <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-2">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-2">
             {footer}
           </div>
         )}

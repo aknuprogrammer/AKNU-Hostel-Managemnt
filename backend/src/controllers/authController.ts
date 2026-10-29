@@ -428,7 +428,6 @@ export async function forgotPasswordSendOtp(req: Request, res: Response): Promis
 
     const user = userRes.rows[0];
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // Invalidate prior unused OTPs for this user
     await executeQuery(`
@@ -438,8 +437,8 @@ export async function forgotPasswordSendOtp(req: Request, res: Response): Promis
     const otpId = `otp-${uuidv4().slice(0, 8)}`;
     await executeQuery(`
       INSERT INTO password_reset_otps (id, user_id, email, otp, expires_at)
-      VALUES ($1, $2, $3, $4, $5)
-    `, [otpId, user.id, user.email, otp, expiresAt]);
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '10 minutes')
+    `, [otpId, user.id, user.email, otp]);
 
     const emailSent = await sendOtpEmail(user.email, user.full_name, otp);
     if (!emailSent) {
@@ -502,7 +501,7 @@ export async function forgotPasswordVerifyOtp(req: Request, res: Response): Prom
 
     // Check latest valid OTP
     const otpRes = await executeQuery(`
-      SELECT id, expires_at, used
+      SELECT id, expires_at, used, (expires_at < CURRENT_TIMESTAMP) as is_expired
       FROM password_reset_otps
       WHERE user_id = $1 AND otp = $2 AND used = false
       ORDER BY created_at DESC
@@ -515,7 +514,7 @@ export async function forgotPasswordVerifyOtp(req: Request, res: Response): Prom
     }
 
     const record = otpRes.rows[0];
-    if (new Date() > new Date(record.expires_at)) {
+    if (record.is_expired) {
       res.status(400).json({ success: false, error: 'This OTP has expired. Please request a new OTP.' });
       return;
     }
@@ -600,7 +599,6 @@ export async function studentActivationSendOtp(req: Request, res: Response): Pro
 
     // 5. Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
     // Invalidate existing unused OTPs
     await executeQuery(
@@ -611,8 +609,8 @@ export async function studentActivationSendOtp(req: Request, res: Response): Pro
     const otpId = `act-${uuidv4().slice(0, 8)}`;
     await executeQuery(
       `INSERT INTO password_reset_otps (id, user_id, email, otp, expires_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [otpId, row.user_id, row.email, otp, expiresAt]
+       VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + INTERVAL '10 minutes')`,
+      [otpId, row.user_id, row.email, otp]
     );
 
     // 6. Send activation email
@@ -655,7 +653,17 @@ export async function studentActivationSendOtp(req: Request, res: Response): Pro
 }
 
 export async function studentActivationVerifyAndRegister(req: Request, res: Response): Promise<void> {
-  const { identifier, otp, password } = req.body;
+  const {
+    identifier,
+    otp,
+    password,
+    photoUrl,
+    admissionFeeStatus,
+    admissionFeePaymentDate,
+    admissionFeeReceiptNo,
+    admissionFeePaymentMode
+  } = req.body;
+
   if (!identifier || !otp || !password) {
     res.status(400).json({ success: false, error: 'Roll number, 6-digit OTP, and password are required' });
     return;
@@ -701,7 +709,7 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
 
     // Verify OTP
     const otpRes = await executeQuery(
-      `SELECT id, expires_at, used
+      `SELECT id, expires_at, used, (expires_at < CURRENT_TIMESTAMP) as is_expired
        FROM password_reset_otps
        WHERE user_id = $1 AND otp = $2 AND used = false
        ORDER BY created_at DESC
@@ -715,7 +723,7 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
     }
 
     const otpRecord = otpRes.rows[0];
-    if (new Date() > new Date(otpRecord.expires_at)) {
+    if (otpRecord.is_expired) {
       res.status(400).json({ success: false, error: 'This OTP has expired. Please request a new activation OTP.' });
       return;
     }
@@ -727,6 +735,31 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
       [newHash, studentProfile.user_id]
     );
     await executeQuery(`UPDATE password_reset_otps SET used = true WHERE id = $1`, [otpRecord.id]);
+
+    // Save profile photo and hostel admission fee details
+    const feeStatus = admissionFeeStatus || studentProfile.admission_fee_status || 'pending';
+    const feeDate = (feeStatus === 'paid' || feeStatus === 'partial') ? (admissionFeePaymentDate || new Date().toISOString().split('T')[0]) : null;
+    const feeReceipt = admissionFeeReceiptNo ? String(admissionFeeReceiptNo).trim() : null;
+    const feeMode = admissionFeePaymentMode || null;
+    const photoToSave = photoUrl || studentProfile.photo_url || null;
+
+    await executeQuery(
+      `UPDATE students 
+       SET photo_url = COALESCE($1, photo_url),
+           admission_fee_status = $2,
+           admission_fee_payment_date = $3,
+           admission_fee_receipt_no = $4,
+           admission_fee_payment_mode = $5,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6`,
+      [photoToSave, feeStatus, feeDate, feeReceipt, feeMode, studentProfile.id]
+    );
+
+    studentProfile.photo_url = photoToSave;
+    studentProfile.admission_fee_status = feeStatus;
+    studentProfile.admission_fee_payment_date = feeDate;
+    studentProfile.admission_fee_receipt_no = feeReceipt;
+    studentProfile.admission_fee_payment_mode = feeMode;
 
     // Ensure QR token is signed and active
     if (!studentProfile.qr_credential_token || !studentProfile.qr_credential_token.startsWith('aknu_v1.')) {
@@ -741,7 +774,13 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
       studentProfile.qr_status = 'active';
     }
 
-    await logAudit(studentProfile.user_id, 'STUDENT_REGISTRATION_ACTIVATED', 'students', studentProfile.id, { rollNumber: studentProfile.roll_number, hostel: studentProfile.hostel_name, room: studentProfile.room_number }, req);
+    await logAudit(studentProfile.user_id, 'STUDENT_REGISTRATION_ACTIVATED', 'students', studentProfile.id, {
+      rollNumber: studentProfile.roll_number,
+      hostel: studentProfile.hostel_name,
+      room: studentProfile.room_number,
+      hasPhoto: !!photoToSave,
+      admissionFeeStatus: feeStatus
+    }, req);
 
     // Generate JWT token
     const token = generateToken({

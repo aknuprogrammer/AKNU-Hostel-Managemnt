@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StudentProfile } from '../../types.js';
 import { apiRequest } from '../../services/api.js';
 import { useConfirm } from '../../context/ConfirmContext.js';
-import { Modal, Button, Input, Select, Textarea, ButtonGroup } from '../ui/index.js';
+import { Modal, Button, Input, Select, Textarea, ButtonGroup, PhotoCaptureUpload } from '../ui/index.js';
 import { Pencil, GraduationCap, CreditCard } from 'lucide-react';
 import { AcademicDept, AcademicCourse } from './CreateStudentModal.js';
 
@@ -46,7 +46,8 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
     admissionFeePaid: 0,
     admissionFeePaymentDate: '',
     admissionFeeReceiptNo: '',
-    admissionFeePaymentMode: 'upi' as 'upi' | 'bank_challan' | 'dd' | 'net_banking' | 'cash'
+    admissionFeePaymentMode: 'upi' as 'upi' | 'bank_challan' | 'dd' | 'net_banking' | 'cash',
+    photoUrl: ''
   });
 
   useEffect(() => {
@@ -73,7 +74,8 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
           ? student.admission_fee_payment_date.split('T')[0]
           : '',
         admissionFeeReceiptNo: student.admission_fee_receipt_no || '',
-        admissionFeePaymentMode: student.admission_fee_payment_mode || 'upi'
+        admissionFeePaymentMode: student.admission_fee_payment_mode || 'upi',
+        photoUrl: student.photo_url || ''
       });
     }
   }, [student, isOpen]);
@@ -115,6 +117,12 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
       size="2xl"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
+        <PhotoCaptureUpload
+          value={form.photoUrl}
+          onChange={(url) => setForm((prev) => ({ ...prev, photoUrl: url }))}
+          label="Student Face Photo (Required for Biometric Dining Verification)"
+        />
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input
             required
@@ -138,7 +146,7 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
           <Input
             required
             type="email"
-            label="Email Address (Gmail / University Email) *"
+            label="Email Address *"
             placeholder="e.g. student@gmail.com or saiteja@aknu.edu.in"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}

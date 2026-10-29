@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { apiRequest, setStoredToken } from '../services/api.js';
-import { Modal, Button, Input, IconButton } from './ui/index.js';
+import { Modal, Button, Input, IconButton, Select, PhotoCaptureUpload } from './ui/index.js';
 import {
   GraduationCap,
   KeyRound,
@@ -15,7 +15,10 @@ import {
   AlertTriangle,
   Mail,
   ShieldCheck,
-  Check
+  Check,
+  CreditCard,
+  Calendar,
+  Receipt
 } from 'lucide-react';
 
 interface StudentActivationModalProps {
@@ -37,6 +40,17 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Student Photo Capture / Upload
+  const [photoUrl, setPhotoUrl] = useState('');
+
+  // Hostel Admission Fee tracking
+  const [admissionFeeStatus, setAdmissionFeeStatus] = useState<'paid' | 'pending'>('paid');
+  const [admissionFeePaymentDate, setAdmissionFeePaymentDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
+  const [admissionFeeReceiptNo, setAdmissionFeeReceiptNo] = useState('');
+  const [admissionFeePaymentMode, setAdmissionFeePaymentMode] = useState<string>('upi');
 
   // Verified allocation info
   const [verifiedData, setVerifiedData] = useState<{
@@ -68,6 +82,11 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
       setPassword('');
       setConfirmPassword('');
       setShowPassword(false);
+      setPhotoUrl('');
+      setAdmissionFeeStatus('paid');
+      setAdmissionFeePaymentDate(new Date().toISOString().split('T')[0]);
+      setAdmissionFeeReceiptNo('');
+      setAdmissionFeePaymentMode('upi');
     }
   }, [isOpen]);
 
@@ -136,6 +155,10 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
       setError('Verification OTP must be exactly 6 digits');
       return;
     }
+    if (!photoUrl) {
+      setError('Please upload or take your live profile photo. This photo is required for biometric face recognition at meal counters.');
+      return;
+    }
     if (password.length < 6) {
       setError('New password must be at least 6 characters long');
       return;
@@ -158,7 +181,12 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
         body: {
           identifier: identifier.trim(),
           otp: otp.trim(),
-          password
+          password,
+          photoUrl,
+          admissionFeeStatus,
+          admissionFeePaymentDate: admissionFeeStatus === 'paid' ? admissionFeePaymentDate : null,
+          admissionFeeReceiptNo: admissionFeeStatus === 'paid' ? admissionFeeReceiptNo.trim() : null,
+          admissionFeePaymentMode: admissionFeeStatus === 'paid' ? admissionFeePaymentMode : null
         }
       });
 
@@ -195,25 +223,31 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
       }
       icon={<GraduationCap className="w-5 h-5 text-[#23395D]" />}
     >
-      <div className="p-1 space-y-4">
+      <div className="space-y-4">
         {/* Step Indicator Header */}
         <div className="pb-3 border-b border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-bold tracking-widest text-[#92582F] uppercase block">
-                Student Onboarding • Step 3
-              </span>
-              <p className="text-xs text-slate-500">
-                {step === 'request' && 'Verify your student record and hostel bed allocation.'}
-                {step === 'verify' && 'Confirm your accommodation details and set your account password.'}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold tracking-wider text-[#92582F] uppercase">
+                  Resident Activation
+                </span>
+                <span className="hidden sm:inline-block text-slate-300">•</span>
+                <span className="text-[11px] text-slate-500 hidden sm:inline-block">
+                  {step === 'request' ? 'Step 1 of 2: Record Verification' : (step === 'verify' ? 'Step 2 of 2: Security & Password' : 'Activation Complete')}
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5 leading-normal">
+                {step === 'request' && 'Verify your student admission record and hostel room allocation.'}
+                {step === 'verify' && 'Upload biometric photo, confirm admission fee status, and set password.'}
                 {step === 'success' && 'Your resident identity is now activated.'}
               </p>
             </div>
 
             {/* Stepper Pill */}
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-              <span className={`w-2 h-2 rounded-full ${step === 'request' ? 'bg-[#23395D]' : 'bg-emerald-500'}`} />
-              <span>{step === 'request' ? 'Step 1 of 2' : (step === 'verify' ? 'Step 2 of 2' : 'Completed')}</span>
+            <div className="self-start sm:self-center shrink-0 flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200/80 px-3 py-1.5 rounded-full">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${step === 'request' ? 'bg-[#23395D]' : 'bg-emerald-500'}`} />
+              <span className="whitespace-nowrap">{step === 'request' ? 'Step 1 of 2' : (step === 'verify' ? 'Step 2 of 2' : 'Completed')}</span>
             </div>
           </div>
         </div>
@@ -232,17 +266,28 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
         {/* STEP 1: REQUEST VERIFICATION */}
         {step === 'request' && (
           <form onSubmit={handleSendOtp} className="space-y-4">
-            <div className="bg-[#FCFAF7] border border-[#DED8CF] p-3.5 rounded-lg text-xs text-slate-700 space-y-1.5 leading-relaxed">
-              <p className="font-bold text-[#23395D] flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-[#23395D]" />
-                Admissions & Allocation Verification Required
-              </p>
-              <p className="text-slate-600">
-                To activate your university resident account, please enter your registered <strong>Roll Number</strong> (e.g., <code className="bg-slate-200 px-1 py-0.5 rounded text-[11px]">22CSE042</code>) or <strong>Registration Number</strong>.
-              </p>
-              <div className="text-[11px] text-[#92582F] font-semibold pt-1 border-t border-slate-200 flex items-center gap-1">
-                <span>⚠️ Note:</span>
-                <span>You can only register if your hostel and room have already been allocated by the warden in Step 2.</span>
+            <div className="bg-[#FCFAF7] border border-[#DED8CF] p-4 rounded-xl text-xs text-slate-700 space-y-2.5 leading-relaxed shadow-xs">
+              <div className="flex items-start gap-2.5">
+                <div className="p-1.5 bg-[#23395D]/10 rounded-md text-[#23395D] shrink-0 mt-0.5">
+                  <ShieldCheck className="w-4 h-4 text-[#23395D]" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="font-bold text-[#23395D] text-xs leading-snug">
+                    Admissions & Allocation Verification Required
+                  </h4>
+                  <p className="text-slate-600 text-xs mt-1 leading-relaxed">
+                    To activate your university resident account, please enter your registered <strong>Roll Number</strong> (e.g., <code className="bg-slate-200/80 text-slate-800 font-mono px-1.5 py-0.5 rounded text-[11px]">22CSE042</code>) or <strong>Registration Number</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-[#92582F] font-medium pt-2.5 border-t border-[#E8DEC8] flex items-start gap-2">
+                <span className="shrink-0 font-bold bg-[#F3E7D7] text-[#92582F] px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider">
+                  Prerequisite
+                </span>
+                <span className="leading-snug">
+                  You can only register if your hostel and room have already been allocated by the warden.
+                </span>
               </div>
             </div>
 
@@ -251,89 +296,169 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
                 label="Student Roll Number or Reg Number"
                 required
                 type="text"
-                placeholder="e.g. 22CSE042 or AKNU/2026/BH1/BTECH/CSE/0001"
+                placeholder="e.g., 22CSE042 or 24CIVIL001"
                 value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                onChange={(e) => setIdentifier(e.target.value.toUpperCase())}
                 leftIcon={<GraduationCap className="w-4 h-4 text-slate-400" />}
                 autoFocus
               />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Enter your AKNU roll number or centralized student registration number.
+              </p>
             </div>
 
-            <div className="pt-2 flex items-center justify-end gap-2.5">
-              <Button type="button" variant="outline" onClick={onClose}>
+            <div className="pt-3 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                className="w-full sm:w-auto"
+              >
                 Cancel
               </Button>
               <Button
                 type="submit"
                 variant="primary"
-                disabled={loading || !identifier.trim()}
-                className="bg-[#23395D] hover:bg-[#192B47] text-white flex items-center gap-2"
+                loading={loading}
+                disabled={!identifier.trim()}
+                rightIcon={<Send className="w-4 h-4" />}
+                className="w-full sm:w-auto"
               >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying Allocation...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Verify & Send OTP</span>
-                    <Send className="w-4 h-4" />
-                  </>
-                )}
+                {loading ? 'Verifying Allocation...' : 'Verify & Send OTP'}
               </Button>
             </div>
           </form>
         )}
 
-        {/* STEP 2: VERIFY OTP & SET PASSWORD */}
+        {/* STEP 2: VERIFY OTP, PHOTO, ADMISSION FEE & SET PASSWORD */}
         {step === 'verify' && verifiedData && (
           <form onSubmit={handleVerifyAndRegister} className="space-y-4">
             {/* Allocation Confirmed Card */}
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3.5 space-y-2">
-              <div className="flex items-center justify-between">
+            <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 sm:p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
                 <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wide flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  Hostel Allocation Confirmed (Step 2 Complete)
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  Hostel Allocation Confirmed
                 </span>
-                <span className="text-xs font-bold text-emerald-900 bg-white/80 px-2 py-0.5 rounded border border-emerald-300">
+                <span className="self-start sm:self-auto text-xs font-mono font-bold text-emerald-900 bg-white/90 px-2 py-0.5 rounded border border-emerald-300">
                   {identifier.toUpperCase()}
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-emerald-200/80">
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-semibold">Student Name:</span>
-                  <span className="font-bold text-slate-900">{verifiedData.studentName}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs pt-2 border-t border-emerald-200/80">
+                <div className="min-w-0">
+                  <span className="text-slate-500 block text-[10px] font-semibold uppercase tracking-wider">Student Name</span>
+                  <span className="font-bold text-slate-900 block truncate">{verifiedData.studentName}</span>
                 </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-semibold">Registration No:</span>
-                  <span className="font-mono text-slate-800 font-bold text-[11px]">{verifiedData.regNumber}</span>
+                <div className="min-w-0">
+                  <span className="text-slate-500 block text-[10px] font-semibold uppercase tracking-wider">Registration No</span>
+                  <span className="font-mono text-slate-800 font-bold text-[11px] block truncate">{verifiedData.regNumber}</span>
                 </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-semibold">Allocated Hostel:</span>
-                  <span className="font-bold text-[#23395D] flex items-center gap-1">
-                    <Building2 className="w-3.5 h-3.5 text-[#23395D]" />
-                    {verifiedData.hostelName}
+                <div className="min-w-0">
+                  <span className="text-slate-500 block text-[10px] font-semibold uppercase tracking-wider">Allocated Hostel</span>
+                  <span className="font-bold text-[#23395D] flex items-center gap-1 truncate">
+                    <Building2 className="w-3.5 h-3.5 text-[#23395D] shrink-0" />
+                    <span className="truncate">{verifiedData.hostelName}</span>
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-500 block text-[10px] font-semibold">Room & Bed:</span>
-                  <span className="font-bold text-[#92582F] flex items-center gap-1">
-                    <DoorClosed className="w-3.5 h-3.5 text-[#92582F]" />
-                    Room {verifiedData.roomNumber} • Bed {verifiedData.bedNumber}
+                <div className="min-w-0">
+                  <span className="text-slate-500 block text-[10px] font-semibold uppercase tracking-wider">Room & Bed</span>
+                  <span className="font-bold text-[#92582F] flex items-center gap-1 truncate">
+                    <DoorClosed className="w-3.5 h-3.5 text-[#92582F] shrink-0" />
+                    <span>Room {verifiedData.roomNumber} • Bed {verifiedData.bedNumber}</span>
                   </span>
                 </div>
               </div>
 
-              <div className="pt-2 border-t border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-emerald-700" />
-                <span>6-digit OTP code sent to <strong>{verifiedData.maskedEmail}</strong></span>
+              <div className="pt-2 border-t border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-1.5 flex-wrap">
+                <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                <span>6-digit OTP code sent to <strong className="break-all">{verifiedData.maskedEmail}</strong></span>
               </div>
             </div>
 
-            {/* OTP Input */}
+            {/* SECTION 1: PHOTO CAPTURE / UPLOAD (MANDATORY FOR BIOMETRIC FACE VERIFICATION) */}
+            <div className="pt-1">
+              <PhotoCaptureUpload
+                value={photoUrl}
+                onChange={setPhotoUrl}
+                required
+                label="Resident Student Face Photo (Required for Biometric Dining Access)"
+              />
+            </div>
+
+            {/* SECTION 2: HOSTEL ADMISSION FEE PAYMENT DETAILS */}
+            <div className="bg-[#FCFAF7] border border-[#DED8CF] p-3.5 sm:p-4 rounded-xl space-y-3">
+              <div className="flex items-center gap-2 border-b border-[#E8DEC8] pb-2">
+                <CreditCard className="w-4 h-4 text-[#92582F]" />
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                  Hostel Admission Fee Status
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Hostel Admission Fee Paid? <span className="text-rose-500">*</span>
+                  </label>
+                  <Select
+                    value={admissionFeeStatus}
+                    onChange={(e) => setAdmissionFeeStatus(e.target.value as 'paid' | 'pending')}
+                    options={[
+                      { value: 'paid', label: 'Yes, Fee Paid in Full' },
+                      { value: 'pending', label: 'No / Pending Verification' }
+                    ]}
+                  />
+                </div>
+
+                {admissionFeeStatus === 'paid' && (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Payment Mode <span className="text-rose-500">*</span>
+                    </label>
+                    <Select
+                      value={admissionFeePaymentMode}
+                      onChange={(e) => setAdmissionFeePaymentMode(e.target.value)}
+                      options={[
+                        { value: 'upi', label: 'UPI (PhonePe, GPay, Paytm)' },
+                        { value: 'bank_challan', label: 'SBI / Bank Challan' },
+                        { value: 'net_banking', label: 'Net Banking / NEFT' },
+                        { value: 'dd', label: 'Demand Draft (DD)' },
+                        { value: 'cash', label: 'Cash at University Cashier' }
+                      ]}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {admissionFeeStatus === 'paid' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <Input
+                      label="Date of Payment"
+                      type="date"
+                      required
+                      value={admissionFeePaymentDate}
+                      onChange={(e) => setAdmissionFeePaymentDate(e.target.value)}
+                      leftIcon={<Calendar className="w-4 h-4 text-slate-400" />}
+                    />
+                  </div>
+                  <div>
+                    <Input
+                      label="Receipt / Challan / UTR Number"
+                      type="text"
+                      placeholder="e.g. SBI-CH-82910 or UTR Number"
+                      value={admissionFeeReceiptNo}
+                      onChange={(e) => setAdmissionFeeReceiptNo(e.target.value)}
+                      leftIcon={<Receipt className="w-4 h-4 text-slate-400" />}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 3: OTP INPUT */}
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-bold text-slate-700">
                   Enter 6-Digit Email OTP <span className="text-rose-500">*</span>
                 </label>
@@ -350,6 +475,7 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
               <Input
                 required
                 type="text"
+                inputMode="numeric"
                 maxLength={6}
                 placeholder="• • • • • •"
                 value={otp}
@@ -360,7 +486,7 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
               />
             </div>
 
-            {/* Password Fields */}
+            {/* SECTION 4: PASSWORD FIELDS */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Input
@@ -396,33 +522,26 @@ export const StudentActivationModal: React.FC<StudentActivationModalProps> = ({
               </div>
             </div>
 
-            <div className="pt-2 flex items-center justify-between">
+            {/* Actions */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2.5">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => setStep('request')}
-                className="flex items-center gap-1.5"
+                leftIcon={<ArrowLeft className="w-4 h-4" />}
+                className="w-full sm:w-auto"
               >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back</span>
+                Back
               </Button>
               <Button
                 type="submit"
                 variant="primary"
-                disabled={loading || otp.length !== 6 || password.length < 6 || password !== confirmPassword}
-                className="bg-[#23395D] hover:bg-[#192B47] text-white flex items-center gap-2"
+                loading={loading}
+                disabled={otp.length !== 6 || !photoUrl || password.length < 6 || password !== confirmPassword}
+                rightIcon={<Check className="w-4 h-4" />}
+                className="w-full sm:w-auto"
               >
-                {loading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Activating Account...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Complete Registration & Sign In</span>
-                    <Check className="w-4 h-4" />
-                  </>
-                )}
+                {loading ? 'Activating Account...' : 'Complete Registration & Sign In'}
               </Button>
             </div>
           </form>
