@@ -105,6 +105,7 @@ export const MealScannerPage: React.FC = () => {
 
   // Active view tab: 'camera' | 'late-permissions' | 'history'
   const [activeTab, setActiveTab] = useState<'camera' | 'late-permissions' | 'history'>('camera');
+  const [autoScan, setAutoScan] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -353,6 +354,93 @@ export const MealScannerPage: React.FC = () => {
     }
   };
 
+  // 1:N Automated Biometric Live Face Scan
+  const handleLiveFaceScan = async () => {
+    if (processing) return;
+
+    const snapshot = captureVideoSnapshot();
+    if (!snapshot) {
+      await showError('Unable to capture frame from webcam. Please make sure the camera is running.', 'Camera Frame Error');
+      return;
+    }
+
+    setCapturedPhotoUrl(snapshot);
+    setProcessing(true);
+
+    try {
+      const res = await apiRequest<{
+        success: boolean;
+        resultStatus: string;
+        title: string;
+        message: string;
+        transaction?: any;
+        student?: any;
+        faceMatchScore?: number;
+      }>('/meal-scans/recognize-face', {
+        method: 'POST',
+        body: {
+          image: snapshot,
+          mealSessionId: selectedSessionId,
+          hostelId: selectedHostelId,
+          checkpointName
+        }
+      });
+
+      if (res.success) {
+        setScanResult({
+          success: true,
+          resultStatus: 'SUCCESS',
+          title: res.title || 'PRESENT - FACE VERIFIED',
+          message: res.message,
+          student: res.student,
+          transaction: res.transaction
+        });
+        playSound('success');
+        fetchRecentScans();
+        fetchLatePermissions();
+      }
+    } catch (err: any) {
+      const isDuplicate = err.status === 409 || err.message?.includes('already') || err.message?.includes('ALREADY');
+      const isOutsideHours = err.status === 400 && err.message?.includes('late');
+
+      const errResult: MealScanResult = {
+        success: false,
+        resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : 'INVALID_CREDENTIAL'),
+        title: isDuplicate
+          ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
+          : (isOutsideHours ? 'LATE ARRIVAL - PERMISSION REQUIRED' : 'FACE NOT RECOGNIZED'),
+        message: err.message || 'Face did not match any registered resident in this hostel wing.',
+        student: err.student || undefined
+      };
+
+      setScanResult(errResult);
+      playSound(isDuplicate ? 'duplicate' : 'error');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // Auto-Face Scan continuous interval
+  useEffect(() => {
+    if (!autoScan || !cameraActive) return;
+    const interval = setInterval(() => {
+      if (!processing && !scanResult) {
+        handleLiveFaceScan();
+      }
+    }, 2800);
+    return () => clearInterval(interval);
+  }, [autoScan, cameraActive, processing, scanResult, selectedSessionId, selectedHostelId]);
+
+  // Auto-dismiss scan result modal during continuous auto-scan mode so next student is scanned automatically
+  useEffect(() => {
+    if (scanResult && autoScan) {
+      const timer = setTimeout(() => {
+        setScanResult(null);
+      }, 2600);
+      return () => clearTimeout(timer);
+    }
+  }, [scanResult, autoScan]);
+
   // Submit on-the-spot late meal permission
   const handleGrantLatePermission = async () => {
     if (!lateRoll.trim()) {
@@ -561,16 +649,36 @@ export const MealScannerPage: React.FC = () => {
               )}
             </div>
 
-            {/* Quick Action Bar under Camera */}
+            {/* 1:N Biometric Scan Action Panel */}
             <div className="p-4 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">WING DIRECTORY:</span>
-                <span className="text-xs font-bold text-slate-200">
-                  {studentsDirectory.length} Active Eligible Residents
-                </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center gap-2 shadow-lg px-4 py-2"
+                  onClick={handleLiveFaceScan}
+                  disabled={processing || !cameraActive}
+                  loading={processing}
+                >
+                  <Scan className="w-5 h-5 text-white" />
+                  Scan Student Face (1:N)
+                </Button>
+
+                <Button
+                  variant={autoScan ? 'secondary' : 'outline'}
+                  size="sm"
+                  className={`text-xs font-bold border-slate-700 ${autoScan ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 border-amber-500' : 'text-slate-300'}`}
+                  onClick={() => setAutoScan(!autoScan)}
+                  disabled={!cameraActive}
+                >
+                  {autoScan ? '⚡ Auto-Scan: ACTIVE' : '⚡ Enable Auto-Scan'}
+                </Button>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-mono text-slate-400 hidden sm:inline">
+                  {studentsDirectory.length} Residents
+                </span>
                 {cameraActive ? (
                   <Button variant="outline" size="sm" className="text-xs border-slate-700 text-slate-300" onClick={stopCamera}>
                     Pause Camera

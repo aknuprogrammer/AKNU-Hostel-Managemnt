@@ -14,7 +14,7 @@ import {
   Platform
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { mobileApiRequest, setMobileToken } from '../config/api';
+import { mobileApiRequest, setMobileToken, getApiBaseUrl, setApiBaseUrl, CURRENT_LOCAL_IP } from '../config/api';
 import { heritageTheme } from '../config/heritageTheme';
 
 const theme = heritageTheme.light;
@@ -318,11 +318,47 @@ export default function StudentRegistrationModal({
             showsVerticalScrollIndicator={false}
           >
             {/* Error Banner */}
-            {!!error && (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>⚠️ {error}</Text>
-              </View>
-            )}
+            {!!error && (() => {
+              const isNetworkError =
+                error.includes('NoRouteToHostException') ||
+                error.includes('Host unreachable') ||
+                error.includes('Network request failed') ||
+                error.includes('Failed to fetch') ||
+                error.includes('failed to connect');
+
+              return (
+                <View style={[styles.errorBanner, isNetworkError && styles.errorBannerNetwork]}>
+                  <Text style={styles.errorText}>
+                    {isNetworkError ? '⚠️ Server Unreachable' : `⚠️ ${error}`}
+                  </Text>
+                  {isNetworkError && (
+                    <View style={{ marginTop: 6 }}>
+                      <Text style={[styles.errorText, { fontWeight: '400', fontSize: 11, marginBottom: 8, color: '#991B1B' }]}>
+                        Cannot connect to <Text style={{ fontWeight: '700' }}>{getApiBaseUrl()}</Text>.
+                        Your PC's Wi-Fi IP is <Text style={{ fontWeight: '700' }}>{CURRENT_LOCAL_IP}</Text>. Please ensure your phone is connected to the same Wi-Fi network.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setApiBaseUrl(`http://${CURRENT_LOCAL_IP}:5000`);
+                          setError('');
+                          if (step === 'request') {
+                            handleSendOtp();
+                          } else if (step === 'verify') {
+                            handleVerifyAndRegister();
+                          }
+                        }}
+                        style={styles.errorQuickActionBtn}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.errorQuickActionText}>
+                          🔄 Switch to Wi-Fi ({CURRENT_LOCAL_IP}) & Retry
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             {/* STEP 1: REQUEST OTP */}
             {step === 'request' && (
@@ -755,6 +791,26 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     marginBottom: 12
+  },
+  errorBannerNetwork: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#F87171',
+    borderWidth: 1.5,
+    padding: 12
+  },
+  errorQuickActionBtn: {
+    backgroundColor: theme.accent,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4
+  },
+  errorQuickActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700'
   },
   errorText: {
     fontSize: 12,

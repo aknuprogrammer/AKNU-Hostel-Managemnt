@@ -6,6 +6,7 @@ import { generateToken } from '../config/jwt.js';
 import { logAudit, AuthRequest } from '../middleware/auth.js';
 import { generateQrSalt, signStudentQrToken } from '../utils/qr.js';
 import { sendOtpEmail, sendStudentActivationOtpEmail } from '../services/emailService.js';
+import { invalidateFaceCache } from '../services/faceRecognitionService.js';
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { email, password } = req.body;
@@ -754,6 +755,10 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
        WHERE id = $6`,
       [photoToSave, feeStatus, feeDate, feeReceipt, feeMode, studentProfile.id]
     );
+
+    if (photoToSave) {
+      invalidateFaceCache();
+    }
 
     studentProfile.photo_url = photoToSave;
     studentProfile.admission_fee_status = feeStatus;

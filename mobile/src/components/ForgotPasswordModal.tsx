@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
-import { mobileApiRequest } from '../config/api';
+import { mobileApiRequest, getApiBaseUrl, setApiBaseUrl, CURRENT_LOCAL_IP } from '../config/api';
 import { heritageTheme } from '../config/heritageTheme';
 
 const theme = heritageTheme.light;
@@ -196,12 +196,56 @@ export default function ForgotPasswordModal({
             </View>
 
             {/* Error Banner */}
-            {Boolean(error) && (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorBannerIcon}>⚠️</Text>
-                <Text style={styles.errorBannerText}>{error}</Text>
-              </View>
-            )}
+            {Boolean(error) && (() => {
+              const isNetworkError =
+                error.includes('NoRouteToHostException') ||
+                error.includes('Host unreachable') ||
+                error.includes('Network request failed') ||
+                error.includes('Failed to fetch') ||
+                error.includes('failed to connect');
+
+              return (
+                <View style={[styles.errorBanner, isNetworkError && { flexDirection: 'column', alignItems: 'stretch' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.errorBannerIcon}>⚠️</Text>
+                    <Text style={styles.errorBannerText}>
+                      {isNetworkError ? 'Server Unreachable' : error}
+                    </Text>
+                  </View>
+                  {isNetworkError && (
+                    <View style={{ marginTop: 6, marginLeft: 20 }}>
+                      <Text style={[styles.errorBannerText, { fontWeight: '400', fontSize: 11, marginBottom: 8 }]}>
+                        Cannot reach backend at <Text style={{ fontWeight: '700' }}>{getApiBaseUrl()}</Text>.
+                        Ensure your device is connected to the same Wi-Fi.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setApiBaseUrl(`http://${CURRENT_LOCAL_IP}:5000`);
+                          setError('');
+                          if (step === 'request') {
+                            handleSendOtp();
+                          } else if (step === 'verify') {
+                            handleVerifyOtpAndReset();
+                          }
+                        }}
+                        style={{
+                          backgroundColor: theme.accent,
+                          paddingVertical: 7,
+                          paddingHorizontal: 10,
+                          borderRadius: 6,
+                          alignItems: 'center'
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                          🔄 Switch to Wi-Fi ({CURRENT_LOCAL_IP}) & Retry
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             <ScrollView
               contentContainerStyle={styles.scrollContent}

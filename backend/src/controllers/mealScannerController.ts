@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { executeQuery, executeTransaction } from '../config/database.js';
 import { AuthRequest, logAudit } from '../middleware/auth.js';
 import { verifyStudentQrToken } from '../utils/qr.js';
+import { matchFaceAgainstDirectory } from '../services/faceRecognitionService.js';
 
 interface ScanRequestBody {
   qrToken?: string;
@@ -49,15 +50,50 @@ export async function getActiveMealSession(): Promise<any | null> {
   return null;
 }
 
+// Helper to determine the upcoming meal session if mess is currently closed
+export async function getNextMealSession(): Promise<{ nextSession: any; startsInMinutes: number; isTomorrow: boolean } | null> {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const sessionsRes = await executeQuery(
+    `SELECT * FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC`
+  );
+
+  if (sessionsRes.rows.length === 0) return null;
+
+  for (const s of sessionsRes.rows) {
+    const [startH, startM] = s.start_time.split(':').map(Number);
+    const startTotal = startH * 60 + startM;
+    if (startTotal > currentMinutes) {
+      return {
+        nextSession: s,
+        startsInMinutes: startTotal - currentMinutes,
+        isTomorrow: false
+      };
+    }
+  }
+
+  const firstSession = sessionsRes.rows[0];
+  const [fH, fM] = firstSession.start_time.split(':').map(Number);
+  const fTotal = fH * 60 + fM;
+  return {
+    nextSession: firstSession,
+    startsInMinutes: (1440 - currentMinutes) + fTotal,
+    isTomorrow: true
+  };
+}
+
 export async function getActiveSessionInfo(req: AuthRequest, res: Response): Promise<void> {
   try {
     const activeSession = await getActiveMealSession();
+    const nextSessionInfo = await getNextMealSession();
     const allSessions = (await executeQuery('SELECT * FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC')).rows;
 
     res.json({
       success: true,
       data: {
         activeSession,
+        nextSessionInfo,
         allSessions,
         currentTime: new Date().toLocaleTimeString('en-IN', { hour12: false })
       }
@@ -880,4 +916,119 @@ export async function createLateMealPermission(req: AuthRequest, res: Response):
     res.status(500).json({ success: false, error: err.message });
   }
 }
+
+/**
+ * 1:N Automated Face Recognition Dining Scanner
+ * Receives a live captured camera image, matches against registered students,
+ * and records session meal attendance automatically without entering roll numbers.
+ */
+export async function recognizeAndVerifyMealScan(req: AuthRequest, res: Response): Promise<void> {
+  const { image, mealSessionId, hostelId, checkpointName = 'Biometric Dining Scanner', isLateMealAllowed } = req.body;
+
+  if (!image || typeof image !== 'string' || image.trim().length < 500) {
+    res.status(400).json({
+      success: false,
+      resultStatus: 'INVALID_CREDENTIAL',
+      title: 'Missing Camera Image',
+      message: 'A clear camera frame is required to perform biometric face scanning.'
+    });
+    return;
+  }
+
+  try {
+    // 1. Fetch eligible students with registered face photos in this wing/hostel
+    let whereClauses = ["s.hostel_status = 'active'", "s.mess_eligibility = true", "s.photo_url IS NOT NULL"];
+    let params: any[] = [];
+    let pIdx = 1;
+
+    const isSuperAdmin = req.user?.role === 'super_admin';
+    const wing = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
+      ? req.user.assignedCategory
+      : null;
+
+    if (wing) {
+      const gender = wing === 'girls' ? 'female' : 'male';
+      whereClauses.push(`(s.gender = $${pIdx} AND (h.category = $${pIdx + 1} OR sa.hostel_id IS NULL))`);
+      params.push(gender, wing);
+      pIdx += 2;
+    }
+
+    if (hostelId) {
+      whereClauses.push(`(sa.hostel_id = $${pIdx} OR sa.hostel_id IS NULL)`);
+      params.push(hostelId);
+      pIdx++;
+    }
+
+    const studentsRes = await executeQuery(
+      `SELECT s.id, s.full_name, s.roll_number, s.reg_number, s.photo_url, s.gender,
+              h.id as hostel_id, h.name as hostel_name, h.category as hostel_category,
+              r.room_number, b.bed_number
+       FROM students s
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN hostels h ON sa.hostel_id = h.id
+       LEFT JOIN rooms r ON sa.room_id = r.id
+       LEFT JOIN beds b ON sa.bed_id = b.id
+       WHERE ${whereClauses.join(' AND ')}`,
+      params
+    );
+
+    if (studentsRes.rowCount === 0) {
+      res.status(404).json({
+        success: false,
+        resultStatus: 'INVALID_CREDENTIAL',
+        title: 'No Registered Face Profiles',
+        message: 'No active hostel residents have registered face photos in this hostel wing yet. Please register student faces first.'
+      });
+      return;
+    }
+
+    // 2. Perform 1:N Biometric Facial Comparison
+    const matchResult = await matchFaceAgainstDirectory(image, studentsRes.rows, 0.60);
+
+    if (!matchResult.matched || !matchResult.bestMatch) {
+      const best = matchResult.bestMatch;
+      const bestConf = best ? Math.round(best.confidence * 100) : 0;
+      await recordScanAttempt(
+        null,
+        null,
+        mealSessionId || null,
+        hostelId || null,
+        checkpointName,
+        req.user?.id || 'staff',
+        'UNRECOGNIZED_FACE',
+        `Face match confidence below threshold (${bestConf}%)`
+      );
+
+      res.status(404).json({
+        success: false,
+        resultStatus: 'UNRECOGNIZED_FACE',
+        title: 'Face Not Recognized',
+        message: matchResult.error || `Face did not match any registered resident in this hostel wing (highest similarity: ${bestConf}%).`,
+        bestMatch: best ? {
+          fullName: best.student.fullName,
+          rollNumber: best.student.rollNumber,
+          confidence: bestConf
+        } : null
+      });
+      return;
+    }
+
+    // 3. Match found! Pass identified student into standard meal attendance processor
+    req.body.studentId = matchResult.bestMatch.student.studentId;
+    req.body.verificationMethod = 'FACE_RECOGNITION';
+    req.body.faceMatchScore = matchResult.bestMatch.confidence;
+    req.body.checkpointName = checkpointName;
+
+    return processMealScan(req, res);
+  } catch (err: any) {
+    console.error('[Face Recognition Scanner Error]', err);
+    res.status(500).json({
+      success: false,
+      resultStatus: 'SERVER_ERROR',
+      title: 'Scanner Error',
+      message: err.message || 'Error occurred while analyzing face biometric.'
+    });
+  }
+}
+
 

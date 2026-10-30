@@ -1,5 +1,7 @@
 import { NativeModules, Platform } from 'react-native';
 
+export const CURRENT_LOCAL_IP = '192.168.1.104';
+
 // Automatically detect host IP from Metro bundle URL when running on physical device via Expo Go,
 // with fallback to current local Wi-Fi IP
 function resolveDefaultHost(): string {
@@ -7,7 +9,7 @@ function resolveDefaultHost(): string {
     const scriptURL: string = NativeModules?.SourceCode?.scriptURL || '';
     if (scriptURL && scriptURL.includes('://')) {
       const hostPart = scriptURL.split('://')[1]?.split(':')[0];
-      if (hostPart && hostPart !== 'localhost' && hostPart !== '127.0.0.1') {
+      if (hostPart && hostPart !== 'localhost' && hostPart !== '127.0.0.1' && hostPart !== '192.168.0.104') {
         return hostPart;
       }
     }
@@ -15,11 +17,14 @@ function resolveDefaultHost(): string {
     // Fallback if NativeModules is unavailable
   }
   return Platform.OS === 'android' && !Platform.isTV
-    ? '192.168.0.102'
+    ? CURRENT_LOCAL_IP
     : 'localhost';
 }
 
 let customBaseUrl = `http://${resolveDefaultHost()}:5000/api/v1`;
+if (customBaseUrl.includes('192.168.0.104')) {
+  customBaseUrl = customBaseUrl.replace('192.168.0.104', CURRENT_LOCAL_IP);
+}
 
 export function getApiBaseUrl(): string {
   return customBaseUrl;

@@ -41,6 +41,15 @@ export default function App() {
   const [serverUrl, setServerUrl] = useState(getApiBaseUrl().replace('/api/v1', ''));
   const [showServerConfig, setShowServerConfig] = useState(false);
 
+  useEffect(() => {
+    // If client has stale IP from previous network session, migrate to current IP
+    if (getApiBaseUrl().includes('192.168.0.104')) {
+      const updated = 'http://192.168.1.104:5000';
+      setServerUrl(updated);
+      setApiBaseUrl(updated);
+    }
+  }, []);
+
   // Active Meal Session state
   const [activeSession, setActiveSession] = useState<any | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -52,6 +61,7 @@ export default function App() {
   const [scanResult, setScanResult] = useState<any | null>(null);
   const [scanModalVisible, setScanModalVisible] = useState(false);
   const [scanProcessing, setScanProcessing] = useState(false);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(false);
   const [sessionScansCount, setSessionScansCount] = useState(0);
   const [recentScans, setRecentScans] = useState<any[]>([]);
   const isCooldownLocked = useRef(false);
@@ -322,35 +332,99 @@ export default function App() {
       )
     : [];
 
-  // Capture face snapshot & trigger verification
+  // 1:N Automated Biometric Face Capture & Verification
   const handleCaptureFaceScan = async () => {
     if (scanProcessing || isCooldownLocked.current) return;
 
-    const targetRoll = (searchDirectoryQuery || manualCodeInput).trim();
-    if (!targetRoll) {
-      Alert.alert(
-        'Student Selection Required',
-        'Please enter a Roll Number or select a resident from the directory below to verify against their face photo.'
-      );
+    if (!cameraRef.current) {
+      Alert.alert('Camera Initializing', 'Please wait a moment while the camera activates.');
       return;
     }
 
     try {
       setScanProcessing(true);
-      if (cameraRef.current?.takePictureAsync) {
-        try {
-          await cameraRef.current.takePictureAsync({ quality: 0.4 });
-        } catch (camErr) {
-          // Camera snapshot is auxiliary
-        }
+      isCooldownLocked.current = true;
+
+      // 1. Capture snapshot with base64 from live camera viewport
+      let base64Photo = '';
+      try {
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.5,
+          base64: true,
+          skipProcessing: true
+        });
+        base64Photo = photo?.base64 || '';
+      } catch (camErr: any) {
+        console.log('Camera capture notice:', camErr.message);
       }
-      await processScanToken(targetRoll);
-      setManualCodeInput('');
-      setSearchDirectoryQuery('');
+
+      const manualRoll = (searchDirectoryQuery || manualCodeInput).trim();
+
+      if (base64Photo) {
+        // Pure 1:N Biometric Facial Recognition without entering registration numbers
+        const imagePayload = `data:image/jpeg;base64,${base64Photo}`;
+        const res = await mobileApiRequest<any>('/meal-scans/recognize-face', {
+          method: 'POST',
+          body: {
+            image: imagePayload,
+            checkpointName: 'Mobile Dining Counter',
+            mealSessionId: activeSession?.id || undefined,
+            rollNumber: manualRoll || undefined
+          }
+        });
+
+        setScanResult(res);
+        setScanModalVisible(true);
+
+        if (res.resultStatus === 'SUCCESS') {
+          Vibration.vibrate([0, 100, 50, 100]); // double beep vibe
+          setSessionScansCount((prev) => prev + 1);
+          fetchRecentScans();
+        } else {
+          Vibration.vibrate(400); // warning vibe
+        }
+      } else if (manualRoll) {
+        await processScanToken(manualRoll);
+      } else {
+        Alert.alert(
+          'Face Capture Error',
+          'Could not capture clear face frame. Please align student face inside the green reticle.'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Biometric Scan Error', e.message || 'Error occurred while verifying student face.');
     } finally {
       setScanProcessing(false);
+      setTimeout(() => {
+        isCooldownLocked.current = false;
+      }, 2000);
     }
   };
+
+  // Continuous Auto-Scan Interval for hands-free Mess Dining on Mobile
+  useEffect(() => {
+    if (!autoScanEnabled || !permission?.granted || (currentRole !== 'warden' && !currentUser?.role?.includes('warden') && currentUser?.role !== 'super_admin')) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      if (!scanProcessing && !scanModalVisible && !isCooldownLocked.current) {
+        handleCaptureFaceScan();
+      }
+    }, 2800);
+
+    return () => clearInterval(interval);
+  }, [autoScanEnabled, permission, currentRole, scanProcessing, scanModalVisible]);
+
+  // Auto-dismiss scan result modal during continuous auto-scan mode so next student is scanned
+  useEffect(() => {
+    if (scanModalVisible && autoScanEnabled) {
+      const timer = setTimeout(() => {
+        setScanModalVisible(false);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [scanModalVisible, autoScanEnabled]);
 
   // Handle Camera Barcode Detection
   const handleBarcodeScanned = ({ data }: { data: string }) => {
@@ -545,19 +619,19 @@ export default function App() {
                     setServerUrl(val);
                     setApiBaseUrl(val);
                   }}
-                  placeholder="http://192.168.0.102:5000"
+                  placeholder="http://192.168.1.104:5000"
                   placeholderTextColor="#9ca3af"
                   autoCapitalize="none"
                 />
                 <View style={styles.serverPresetRow}>
                   <TouchableOpacity
                     onPress={() => {
-                      setServerUrl('http://192.168.0.102:5000');
-                      setApiBaseUrl('http://192.168.0.102:5000');
+                      setServerUrl('http://192.168.1.104:5000');
+                      setApiBaseUrl('http://192.168.1.104:5000');
                     }}
                     style={styles.presetChip}
                   >
-                    <Text style={styles.presetChipText}>Wi-Fi (192.168.0.102)</Text>
+                    <Text style={styles.presetChipText}>Wi-Fi (192.168.1.104)</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
@@ -767,7 +841,7 @@ export default function App() {
                     </Text>
                   </View>
 
-                  {/* On-Camera Quick Face Capture Button */}
+                  {/* On-Camera Quick Face Capture Button & Auto-Scan Toggle */}
                   <View style={styles.captureFloatingBar}>
                     <TouchableOpacity
                       onPress={handleCaptureFaceScan}
@@ -778,8 +852,26 @@ export default function App() {
                       {scanProcessing ? (
                         <ActivityIndicator color="#ffffff" size="small" />
                       ) : (
-                        <Text style={styles.captureFaceBtnText}>📸 Capture & Verify Face</Text>
+                        <Text style={styles.captureFaceBtnText}>📸 Scan Face (1:N)</Text>
                       )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => setAutoScanEnabled(!autoScanEnabled)}
+                      style={[
+                        styles.autoScanToggleBtn,
+                        autoScanEnabled && styles.autoScanToggleBtnActive
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.autoScanToggleText,
+                          autoScanEnabled && styles.autoScanToggleTextActive
+                        ]}
+                      >
+                        {autoScanEnabled ? '⚡ Auto: ON' : '⚡ Auto-Scan'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -2070,14 +2162,17 @@ const styles = StyleSheet.create({
   captureFloatingBar: {
     position: 'absolute',
     bottom: 12,
-    left: 20,
-    right: 20,
-    alignItems: 'center'
+    left: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
   },
   captureFaceBtn: {
     backgroundColor: '#16a34a',
     paddingVertical: 10,
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
     borderRadius: 24,
     shadowColor: '#000',
     shadowOpacity: 0.3,
@@ -2086,7 +2181,33 @@ const styles = StyleSheet.create({
   },
   captureFaceBtnText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  autoScanToggleBtn: {
+    backgroundColor: 'rgba(15, 39, 68, 0.85)',
+    borderWidth: 1.5,
+    borderColor: '#f59e0b',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4
+  },
+  autoScanToggleBtnActive: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#d97706'
+  },
+  autoScanToggleText: {
+    color: '#fef3c7',
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  autoScanToggleTextActive: {
+    color: '#0f2744',
+    fontSize: 12,
     fontWeight: '800'
   },
   directoryCandidatesContainer: {

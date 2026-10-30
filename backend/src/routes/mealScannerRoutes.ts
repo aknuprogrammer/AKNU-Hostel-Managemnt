@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getActiveSessionInfo,
   processMealScan,
+  recognizeAndVerifyMealScan,
   manualMealOverride,
   correctMealTransaction,
   getRecentScans,
@@ -19,6 +20,7 @@ router.get('/students-directory', authenticate, requireRoles('super_admin', 'chi
 router.get('/late-permissions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), getLateMealPermissions);
 router.post('/late-permissions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), createLateMealPermission);
 
+router.post('/recognize-face', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), recognizeAndVerifyMealScan);
 router.post('/face-scan', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), processMealScan);
 router.post('/scan', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), processMealScan);
 router.post('/verify-scan', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), processMealScan);

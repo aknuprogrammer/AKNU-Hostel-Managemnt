@@ -253,7 +253,12 @@ export async function createHostel(req: AuthRequest, res: Response): Promise<voi
     campus = 'Main Campus, Rajahmundry',
     chiefWardenId,
     wardenId,
-    initRooms
+    initRooms,
+    autoGenRooms,
+    numFloors: rawNumFloors,
+    roomsPerFloor: rawRoomsPerFloor,
+    bedsPerRoom: rawBedsPerRoom,
+    blockName: rawBlockName
   } = req.body;
 
   if (!name || !code || !category) {
@@ -313,12 +318,17 @@ export async function createHostel(req: AuthRequest, res: Response): Promise<voi
       }
 
       // 3. Optional: Initial Rooms / Beds generation
-      if (initRooms && initRooms.numFloors && initRooms.roomsPerFloor) {
-        const numFloors = Math.min(10, Math.max(1, parseInt(String(initRooms.numFloors)) || 1));
-        const roomsPerFloor = Math.min(50, Math.max(1, parseInt(String(initRooms.roomsPerFloor)) || 1));
-        const bedsPerRoom = Math.min(10, Math.max(1, parseInt(String(initRooms.bedsPerRoom)) || 2));
+      const shouldGenRooms = autoGenRooms !== false && (
+        Boolean(initRooms && (initRooms.numFloors || initRooms.roomsPerFloor)) ||
+        Boolean(rawNumFloors || rawRoomsPerFloor)
+      );
+
+      if (shouldGenRooms) {
+        const numFloors = Math.min(10, Math.max(1, parseInt(String(initRooms?.numFloors || rawNumFloors)) || 3));
+        const roomsPerFloor = Math.min(50, Math.max(1, parseInt(String(initRooms?.roomsPerFloor || rawRoomsPerFloor)) || 10));
+        const bedsPerRoom = Math.min(10, Math.max(1, parseInt(String(initRooms?.bedsPerRoom || rawBedsPerRoom)) || 3));
         const blockCode = 'A';
-        const blockName = initRooms.blockName?.trim() || 'Main Wing';
+        const blockName = (initRooms?.blockName || rawBlockName)?.trim() || 'Main Wing';
         const blockId = `blk-${hostelId}-${blockCode.toLowerCase()}`;
 
         await query(

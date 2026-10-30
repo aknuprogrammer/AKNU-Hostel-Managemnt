@@ -37,7 +37,14 @@ export const CreateHostelModal: React.FC<CreateHostelModalProps> = ({
       setSubmitting(true);
       const res = await apiRequest<{ success: boolean; data: any; message?: string }>('/hostels', {
         method: 'POST',
-        body: form
+        body: {
+          ...form,
+          initRooms: form.autoGenRooms ? {
+            numFloors: Number(form.numFloors) || 3,
+            roomsPerFloor: Number(form.roomsPerFloor) || 10,
+            bedsPerRoom: Number(form.bedsPerRoom) || 3
+          } : undefined
+        }
       });
       if (res.success) {
         await showSuccess(res.message || 'Hostel created successfully');
