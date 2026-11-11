@@ -331,6 +331,22 @@ export const MealScannerPage: React.FC = () => {
         playSound('success');
         fetchRecentScans();
         fetchLatePermissions();
+      } else {
+        const isDuplicate = res.resultStatus === 'DUPLICATE' || res.message?.includes('already') || res.message?.includes('ALREADY');
+        const isOutsideHours = res.resultStatus === 'OUTSIDE_HOURS' || res.message?.includes('late');
+
+        const errResult: MealScanResult = {
+          success: false,
+          resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : ((res.resultStatus as any) || 'INVALID_CREDENTIAL')),
+          title: res.title || (isDuplicate
+            ? '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN'
+            : (isOutsideHours ? '⏰ LATE ARRIVAL - PERMISSION REQUIRED' : 'VERIFICATION ERROR')),
+          message: res.message || 'Verification could not proceed.',
+          student: res.student || (student as any)
+        };
+
+        setScanResult(errResult);
+        playSound(isDuplicate ? 'duplicate' : 'error');
       }
     } catch (err: any) {
       const isDuplicate = err.status === 409 || err.message?.includes('already') || err.message?.includes('ALREADY');
@@ -340,8 +356,8 @@ export const MealScannerPage: React.FC = () => {
         success: false,
         resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : 'INVALID_CREDENTIAL'),
         title: isDuplicate
-          ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
-          : (isOutsideHours ? 'LATE ARRIVAL - PERMISSION REQUIRED' : 'VERIFICATION ERROR'),
+          ? '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN'
+          : (isOutsideHours ? '⏰ LATE ARRIVAL - PERMISSION REQUIRED' : 'VERIFICATION ERROR'),
         message: err.message || 'Verification could not proceed.',
         student: student as any
       };
@@ -398,6 +414,22 @@ export const MealScannerPage: React.FC = () => {
         playSound('success');
         fetchRecentScans();
         fetchLatePermissions();
+      } else {
+        const isDuplicate = res.resultStatus === 'DUPLICATE' || res.message?.includes('already') || res.message?.includes('ALREADY');
+        const isOutsideHours = res.resultStatus === 'OUTSIDE_HOURS' || res.message?.includes('late');
+
+        const errResult: MealScanResult = {
+          success: false,
+          resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : ((res.resultStatus as any) || 'INVALID_CREDENTIAL')),
+          title: res.title || (isDuplicate
+            ? '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN'
+            : (isOutsideHours ? '⏰ LATE ARRIVAL - PERMISSION REQUIRED' : 'FACE NOT RECOGNIZED')),
+          message: res.message || 'Face did not match any registered resident in this hostel wing.',
+          student: res.student || undefined
+        };
+
+        setScanResult(errResult);
+        playSound(isDuplicate ? 'duplicate' : 'error');
       }
     } catch (err: any) {
       const isDuplicate = err.status === 409 || err.message?.includes('already') || err.message?.includes('ALREADY');
@@ -407,8 +439,8 @@ export const MealScannerPage: React.FC = () => {
         success: false,
         resultStatus: isDuplicate ? 'DUPLICATE' : (isOutsideHours ? 'OUTSIDE_HOURS' : 'INVALID_CREDENTIAL'),
         title: isDuplicate
-          ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
-          : (isOutsideHours ? 'LATE ARRIVAL - PERMISSION REQUIRED' : 'FACE NOT RECOGNIZED'),
+          ? '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN'
+          : (isOutsideHours ? '⏰ LATE ARRIVAL - PERMISSION REQUIRED' : 'FACE NOT RECOGNIZED'),
         message: err.message || 'Face did not match any registered resident in this hostel wing.',
         student: err.student || undefined
       };
@@ -434,9 +466,11 @@ export const MealScannerPage: React.FC = () => {
   // Auto-dismiss scan result modal during continuous auto-scan mode so next student is scanned automatically
   useEffect(() => {
     if (scanResult && autoScan) {
+      // Hold duplicate alerts longer (4.5s) so staff clearly notices the violation
+      const delay = scanResult.resultStatus === 'SUCCESS' ? 2600 : 4500;
       const timer = setTimeout(() => {
         setScanResult(null);
-      }, 2600);
+      }, delay);
       return () => clearTimeout(timer);
     }
   }, [scanResult, autoScan]);
@@ -803,6 +837,24 @@ export const MealScannerPage: React.FC = () => {
                   <p className="text-xs text-slate-600 mt-0.5">{scanResult.message}</p>
                 </div>
               </div>
+
+              {/* Prominent Duplicate Alert Box with Alert Symbol */}
+              {scanResult.resultStatus === 'DUPLICATE' && (
+                <div className="mt-4 p-4 bg-red-100/90 border-2 border-red-500 rounded-xl flex items-start gap-3.5 text-red-950 shadow-sm">
+                  <span className="text-3xl leading-none select-none">⚠️</span>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-black tracking-wider uppercase text-red-900">
+                      WARNING: ALREADY SCANNED TODAY
+                    </h4>
+                    <p className="text-xs text-red-800 font-bold mt-1">
+                      This student has already scanned their face and received food for this meal session.
+                    </p>
+                    <p className="text-xs text-red-700 mt-1">
+                      Scanning multiple times or collecting extra food plates is strictly prohibited.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Student Identity Card */}
               {scanResult.student && (

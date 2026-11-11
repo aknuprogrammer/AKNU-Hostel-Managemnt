@@ -423,16 +423,35 @@ export async function processMealScan(req: AuthRequest, res: Response): Promise<
         let scannedTimeStr = '';
         if (txErr.message?.startsWith('DUPLICATE_SCAN:')) {
           const rawTime = txErr.message.split('DUPLICATE_SCAN:')[1];
-          scannedTimeStr = new Date(rawTime).toLocaleTimeString('en-IN');
+          if (rawTime && rawTime !== 'undefined') {
+            const dateObj = new Date(rawTime);
+            if (!isNaN(dateObj.getTime())) {
+              scannedTimeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            }
+          }
         }
 
-        await recordScanAttempt(student.id, student.roll_number, session.id, targetHostelId, checkpointName, scannedByUserId, 'DUPLICATE', `Meal already taken earlier at ${scannedTimeStr}`);
+        if (!scannedTimeStr) {
+          const priorTxRes = await executeQuery(
+            `SELECT scanned_at FROM meal_transactions WHERE student_id = $1 AND service_date = $2 AND meal_session_id = $3 LIMIT 1`,
+            [student.id, serviceDate, session.id]
+          );
+          if (priorTxRes.rows.length > 0 && priorTxRes.rows[0].scanned_at) {
+            const dateObj = new Date(priorTxRes.rows[0].scanned_at);
+            if (!isNaN(dateObj.getTime())) {
+              scannedTimeStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            }
+          }
+        }
+
+        await recordScanAttempt(student.id, student.roll_number, session.id, targetHostelId, checkpointName, scannedByUserId, 'DUPLICATE', `Meal already taken earlier at ${scannedTimeStr || 'earlier today'}`);
 
         res.status(409).json({
           success: false,
           resultStatus: 'DUPLICATE',
-          title: 'Double-Dip Blocked: Already Taken Food',
-          message: `${student.full_name} (${student.roll_number}) has ALREADY collected food for ${session.name} today${scannedTimeStr ? ' at ' + scannedTimeStr : ''}. Multiple collections and sharing meals are strictly prohibited.`,
+          title: '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN',
+          message: `⚠️ ALREADY SCANNED! ${student.full_name} (${student.roll_number}) has ALREADY scanned and received food for ${session.name} today${scannedTimeStr ? ' at ' + scannedTimeStr : ''}. Scanning more than once for the same meal session is strictly prohibited.`,
+          scannedAt: scannedTimeStr,
           student: {
             id: student.id,
             fullName: student.full_name,
@@ -440,7 +459,9 @@ export async function processMealScan(req: AuthRequest, res: Response): Promise<
             regNumber: student.reg_number,
             photoUrl: student.photo_url,
             hostelName: student.allocated_hostel_name,
-            roomNumber: student.room_number
+            roomNumber: student.room_number,
+            bedNumber: student.bed_number,
+            gender: student.gender
           }
         });
         return;
@@ -534,8 +555,14 @@ export async function manualMealOverride(req: AuthRequest, res: Response): Promi
         }
       });
     } catch (e: any) {
-      if (e.message === 'DUPLICATE_SCAN' || e.message?.includes('uq_meal_student_date_session')) {
-        res.status(409).json({ success: false, error: 'Student already has a recorded meal transaction for this session today.' });
+      if (e.message === 'DUPLICATE_SCAN' || e.message?.includes('uq_meal_student_date_session') || e.message?.includes('unique constraint')) {
+        res.status(409).json({
+          success: false,
+          resultStatus: 'DUPLICATE',
+          title: '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN',
+          error: `⚠️ Student ${student.full_name} (${student.roll_number}) has ALREADY scanned and received food for ${session.name} today. Multiple meal collections are not allowed.`,
+          message: `⚠️ Student ${student.full_name} (${student.roll_number}) has ALREADY scanned and received food for ${session.name} today. Multiple meal collections are not allowed.`
+        });
         return;
       }
       throw e;

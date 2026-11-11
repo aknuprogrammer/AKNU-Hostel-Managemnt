@@ -308,6 +308,8 @@ export default function App() {
         Vibration.vibrate([0, 100, 50, 100]); // double beep vibe
         setSessionScansCount((prev) => prev + 1);
         fetchRecentScans();
+      } else if (res.resultStatus === 'DUPLICATE') {
+        Vibration.vibrate([0, 200, 100, 200, 100, 200]); // triple alert vibration
       } else {
         Vibration.vibrate(400); // long warning vibe
       }
@@ -380,6 +382,8 @@ export default function App() {
           Vibration.vibrate([0, 100, 50, 100]); // double beep vibe
           setSessionScansCount((prev) => prev + 1);
           fetchRecentScans();
+        } else if (res.resultStatus === 'DUPLICATE') {
+          Vibration.vibrate([0, 200, 100, 200, 100, 200]); // triple alert vibration
         } else {
           Vibration.vibrate(400); // warning vibe
         }
@@ -419,12 +423,14 @@ export default function App() {
   // Auto-dismiss scan result modal during continuous auto-scan mode so next student is scanned
   useEffect(() => {
     if (scanModalVisible && autoScanEnabled) {
+      // Hold duplicate alerts longer (4.5s) so staff can clearly view the alert
+      const delay = scanResult?.resultStatus === 'SUCCESS' ? 2500 : 4500;
       const timer = setTimeout(() => {
         setScanModalVisible(false);
-      }, 2500);
+      }, delay);
       return () => clearTimeout(timer);
     }
-  }, [scanModalVisible, autoScanEnabled]);
+  }, [scanModalVisible, autoScanEnabled, scanResult]);
 
   // Handle Camera Barcode Detection
   const handleBarcodeScanned = ({ data }: { data: string }) => {
@@ -1248,14 +1254,34 @@ export default function App() {
               <Text style={styles.resultBadgeIcon}>
                 {scanResult?.resultStatus === 'SUCCESS' ? '✓' : '⚠️'}
               </Text>
-              <Text style={styles.resultBadgeText}>
+              <Text
+                style={[
+                  styles.resultBadgeText,
+                  scanResult?.resultStatus === 'DUPLICATE' && { color: '#991B1B' }
+                ]}
+              >
                 {scanResult?.resultStatus === 'SUCCESS'
                   ? 'PRESENT - FACE VERIFIED'
                   : scanResult?.resultStatus === 'DUPLICATE'
-                  ? 'DOUBLE-DIP BLOCKED: FOOD SHARING FORBIDDEN'
+                  ? '⚠️ ALREADY SCANNED: MEAL ALREADY TAKEN'
                   : (scanResult?.title || 'VERIFICATION FAILED')}
               </Text>
             </View>
+
+            {/* Prominent Duplicate Alert Box with Alert Symbol */}
+            {scanResult?.resultStatus === 'DUPLICATE' && (
+              <View style={styles.duplicateAlertBox}>
+                <Text style={styles.duplicateAlertIcon}>⚠️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.duplicateAlertTitle}>
+                    ALREADY SCANNED TODAY
+                  </Text>
+                  <Text style={styles.duplicateAlertBody}>
+                    Student face was already verified and meal was recorded earlier. Taking food more than once or sharing meals is strictly prohibited.
+                  </Text>
+                </View>
+              </View>
+            )}
 
             {/* Student Identity Section */}
             {scanResult?.student ? (
@@ -2122,6 +2148,34 @@ const styles = StyleSheet.create({
   resultBadgeError: { backgroundColor: '#ffe4e6' },
   resultBadgeIcon: { fontSize: 14, fontWeight: '800' },
   resultBadgeText: { fontSize: 12, fontWeight: '800' },
+  duplicateAlertBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+    width: '100%'
+  },
+  duplicateAlertIcon: {
+    fontSize: 26
+  },
+  duplicateAlertTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#991B1B',
+    letterSpacing: 0.5
+  },
+  duplicateAlertBody: {
+    fontSize: 11,
+    color: '#B91C1C',
+    fontWeight: '600',
+    lineHeight: 15,
+    marginTop: 2
+  },
   modalStudentInfo: {
     alignItems: 'center',
     marginBottom: 12
