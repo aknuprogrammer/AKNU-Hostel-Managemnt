@@ -42,16 +42,29 @@ export const StudentProfileModal: React.FC<StudentProfileModalProps> = ({
       <div className="space-y-4">
         {/* Top Identity & Status Banner */}
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">{student.full_name}</h3>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
-              <span className="font-mono font-bold text-aknu-blue">{student.roll_number}</span>
-              <span>•</span>
-              <span className="capitalize">{student.gender}</span>
-              <span>•</span>
-              <span>
-                ID: <code className="text-slate-600">{student.student_id_code}</code>
-              </span>
+          <div className="flex items-center gap-3.5">
+            {student.photo_url ? (
+              <img
+                src={student.photo_url}
+                alt={student.full_name}
+                className="w-14 h-14 rounded-lg object-cover border-2 border-[#23395D]/30 shadow-xs shrink-0"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-lg bg-[#23395D]/10 border-2 border-[#23395D]/20 flex items-center justify-center font-black text-xl text-[#23395D] shrink-0">
+                {student.full_name?.charAt(0) || 'S'}
+              </div>
+            )}
+            <div>
+              <h3 className="text-base font-bold text-slate-900">{student.full_name}</h3>
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500">
+                <span className="font-mono font-bold text-aknu-blue">{student.roll_number}</span>
+                <span>•</span>
+                <span className="capitalize">{student.gender}</span>
+                <span>•</span>
+                <span>
+                  ID: <code className="text-slate-600">{student.student_id_code}</code>
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

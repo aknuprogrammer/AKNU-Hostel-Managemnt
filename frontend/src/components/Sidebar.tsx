@@ -79,12 +79,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     { id: 'leave', label: 'Leave & Gate Pass', icon: CalendarCheck, show: canAccessLeave },
     { id: 'complaints', label: 'Complaints', icon: AlertCircle, show: canAccessComplaints },
-    {
-      id: 'accounts',
-      label: role === 'student' ? 'My Fees' : 'Fee & Accounts',
-      icon: ReceiptIndianRupee,
-      show: canAccessAccounts
-    },
+    // {
+    //   id: 'accounts',
+    //   label: role === 'student' ? 'My Fees' : 'Fee & Accounts',
+    //   icon: ReceiptIndianRupee,
+    //   show: canAccessAccounts
+    // },
     { id: 'security', label: 'Visitor Logs', icon: ShieldAlert, show: canAccessSecurity },
     { id: 'staff-records', label: 'Staff Directory', icon: Contact, show: canAccessStaff }
   ];

@@ -257,8 +257,23 @@ export const LeavePage: React.FC = () => {
                 leaves.map((l) => (
                   <TableRow key={l.id}>
                     <TableCell>
-                      <span className="font-bold text-slate-800 block text-sm">{l.student_name}</span>
-                      <span className="font-mono text-slate-500 block">{l.roll_number} • {l.hostel_name || 'Hostel'}</span>
+                      <div className="flex items-center space-x-2.5">
+                        {l.photo_url ? (
+                          <img
+                            src={l.photo_url}
+                            alt={l.student_name}
+                            className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-2xs shrink-0"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-xs text-aknu-blue shrink-0">
+                            {l.student_name?.charAt(0) || 'S'}
+                          </div>
+                        )}
+                        <div>
+                          <span className="font-bold text-slate-800 block text-sm">{l.student_name}</span>
+                          <span className="font-mono text-slate-500 block text-xs">{l.roll_number} • {l.hostel_name || 'Hostel'}</span>
+                        </div>
+                      </div>
                     </TableCell>
 
                     <TableCell>

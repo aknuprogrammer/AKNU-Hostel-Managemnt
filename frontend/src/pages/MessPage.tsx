@@ -284,15 +284,33 @@ export const MessPage: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* For students: REMOVE DROPDOWN. Display allocated hostel badge instead */}
+          {/* For students: REMOVE DROPDOWN. Display allocated hostel badge and resident photo */}
           {isStudent ? (
-            <div className="flex items-center space-x-2 bg-[#F7F3ED] border border-[#DED8CF] px-3.5 py-2 rounded-lg">
-              <span className="text-xs font-black text-[#202B3C]">
-                🏢 {currentHostelObj?.name || (isGirlsStudent ? 'Girls Hostel' : 'International Boys Hostel')}
-              </span>
-              <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-[#E0AD83]/20 text-[#92582F] border border-[#E0AD83]/50">
-                {isGirlsStudent ? 'Girls Dining Counter' : 'Boys Dining Counter'}
-              </span>
+            <div className="flex items-center space-x-3 bg-[#F7F3ED] border border-[#DED8CF] px-3.5 py-2 rounded-lg">
+              {(user?.student?.photo_url || user?.photo_url) ? (
+                <img
+                  src={user.student?.photo_url || user.photo_url}
+                  alt={user.fullName}
+                  className="w-10 h-10 rounded-full object-cover border-2 border-[#92582F] shadow-xs shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-[#202B3C] text-amber-200 flex items-center justify-center font-bold text-sm shrink-0">
+                  {user?.student?.full_name?.charAt(0) || user?.fullName?.charAt(0) || 'S'}
+                </div>
+              )}
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-black text-[#202B3C]">
+                    🏢 {currentHostelObj?.name || (isGirlsStudent ? 'Girls Hostel' : 'International Boys Hostel')}
+                  </span>
+                  <span className="text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full bg-[#E0AD83]/20 text-[#92582F] border border-[#E0AD83]/50">
+                    {isGirlsStudent ? 'Girls Dining Wing' : 'Boys Dining Wing'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                  Resident: <span className="font-bold text-slate-800">{user?.student?.full_name || user?.fullName}</span> ({user?.student?.roll_number || 'Resident'})
+                </div>
+              </div>
             </div>
           ) : (
             /* For staff / wardens / admins: Hostel Selector Dropdown */

@@ -18,7 +18,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import QRCode from 'react-native-qrcode-svg';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { mobileApiRequest, setMobileToken, getApiBaseUrl, setApiBaseUrl } from './src/config/api';
+import { mobileApiRequest, setMobileToken, getApiBaseUrl, setApiBaseUrl, CURRENT_LOCAL_IP } from './src/config/api';
 import StudentRegistrationModal from './src/components/StudentRegistrationModal';
 import ForgotPasswordModal from './src/components/ForgotPasswordModal';
 
@@ -43,8 +43,8 @@ export default function App() {
 
   useEffect(() => {
     // If client has stale IP from previous network session, migrate to current IP
-    if (getApiBaseUrl().includes('192.168.0.104')) {
-      const updated = 'http://192.168.1.104:5000';
+    if (getApiBaseUrl().includes('192.168.0.104') || getApiBaseUrl().includes('192.168.1.104')) {
+      const updated = `http://${CURRENT_LOCAL_IP}:5000`;
       setServerUrl(updated);
       setApiBaseUrl(updated);
     }
@@ -263,7 +263,46 @@ export default function App() {
         }
       }
     } catch (e: any) {
-      Alert.alert('Login Failed', e.message || 'Could not connect to server at ' + getApiBaseUrl());
+      const msg = e.message || '';
+      const isConnectionError =
+        msg.includes('ConnectException') ||
+        msg.includes('Failed to connect') ||
+        msg.includes('Network request failed') ||
+        msg.includes('NoRouteToHostException') ||
+        msg.includes('Network error');
+
+      if (isConnectionError && !getApiBaseUrl().includes(CURRENT_LOCAL_IP)) {
+        Alert.alert(
+          'Server Connection Failed',
+          `Cannot connect to:\n${getApiBaseUrl()}\n\nYour computer's current Wi-Fi IP is ${CURRENT_LOCAL_IP}.\nWould you like to switch to http://${CURRENT_LOCAL_IP}:5000 and try again?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: `Switch to ${CURRENT_LOCAL_IP} & Retry`,
+              onPress: () => {
+                const target = `http://${CURRENT_LOCAL_IP}:5000`;
+                setServerUrl(target);
+                setApiBaseUrl(target);
+                setTimeout(() => handleLogin(loginEmail, loginPassword), 200);
+              }
+            }
+          ]
+        );
+      } else if (msg.toLowerCase().includes('not yet created')) {
+        Alert.alert(
+          'Account Not Yet Created',
+          msg,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Register & Activate Account',
+              onPress: () => setStudentRegistrationVisible(true)
+            }
+          ]
+        );
+      } else {
+        Alert.alert('Login Failed', msg || 'Could not connect to server at ' + getApiBaseUrl());
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -625,19 +664,19 @@ export default function App() {
                     setServerUrl(val);
                     setApiBaseUrl(val);
                   }}
-                  placeholder="http://192.168.1.104:5000"
+                  placeholder={`http://${CURRENT_LOCAL_IP}:5000`}
                   placeholderTextColor="#9ca3af"
                   autoCapitalize="none"
                 />
                 <View style={styles.serverPresetRow}>
                   <TouchableOpacity
                     onPress={() => {
-                      setServerUrl('http://192.168.1.104:5000');
-                      setApiBaseUrl('http://192.168.1.104:5000');
+                      setServerUrl(`http://${CURRENT_LOCAL_IP}:5000`);
+                      setApiBaseUrl(`http://${CURRENT_LOCAL_IP}:5000`);
                     }}
                     style={styles.presetChip}
                   >
-                    <Text style={styles.presetChipText}>Wi-Fi (192.168.1.104)</Text>
+                    <Text style={styles.presetChipText}>Wi-Fi ({CURRENT_LOCAL_IP})</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => {
@@ -731,10 +770,18 @@ export default function App() {
                 </Text>
               </View>
             </View>
-            <Text style={styles.appHeaderRole}>
-              Logged in: <Text style={{ fontWeight: '700', color: '#f59e0b' }}>{currentUser.fullName}</Text> (
-              {currentUser.roleDisplay || currentUser.role})
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              {(currentUser?.student?.photo_url || currentUser?.photo_url) ? (
+                <Image
+                  source={{ uri: currentUser.student?.photo_url || currentUser.photo_url }}
+                  style={{ width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#f59e0b' }}
+                />
+              ) : null}
+              <Text style={styles.appHeaderRole}>
+                Logged in: <Text style={{ fontWeight: '700', color: '#f59e0b' }}>{currentUser.fullName}</Text> (
+                {currentUser.roleDisplay || currentUser.role})
+              </Text>
+            </View>
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -1016,7 +1063,7 @@ export default function App() {
         {/* =================================================================== */}
         {currentRole === 'student' && (
           <View style={styles.section}>
-            {/* Student ID Card: Text on Left, QR on Right, No Photo, No Reg Number */}
+            {/* Student ID Card: Photo and Text on Left, QR on Right */}
             <View style={styles.idCard}>
               {/* Card Ribbon */}
               <View style={styles.idCardHeader}>
@@ -1024,20 +1071,37 @@ export default function App() {
                 <Text style={styles.idCardSub}>Hostel Resident Official Digital Credential</Text>
               </View>
 
-              {/* Card Body: Left Details, Right QR */}
+              {/* Card Body: Left Details with Photo, Right QR */}
               <View style={styles.idCardHorizontal}>
-                {/* Left Side: All Text Details */}
+                {/* Left Side: Student Photo + Text Details */}
                 <View style={styles.idCardLeft}>
-                  <Text style={styles.studentName}>
-                    {currentUser?.student?.full_name || currentUser.fullName || 'Rahul Varma'}
-                  </Text>
-
-                  <View style={styles.rollBadgeRow}>
-                    <Text style={styles.rollLabel}>Roll No:</Text>
-                    <View style={styles.rollBadge}>
-                      <Text style={styles.rollBadgeText}>
-                        {currentUser?.student?.roll_number || '22CSE042'}
+                  {/* Photo & Name / Roll Badge Header */}
+                  <View style={styles.idCardProfileRow}>
+                    {(currentUser?.student?.photo_url || currentUser?.photo_url) ? (
+                      <Image
+                        source={{ uri: currentUser.student?.photo_url || currentUser.photo_url }}
+                        style={styles.idCardPhoto}
+                      />
+                    ) : (
+                      <View style={styles.idCardPhotoPlaceholder}>
+                        <Text style={styles.idCardPhotoPlaceholderText}>
+                          {(currentUser?.student?.full_name || currentUser?.fullName || 'S').charAt(0)}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.idCardNameBlock}>
+                      <Text style={styles.studentName} numberOfLines={2}>
+                        {currentUser?.student?.full_name || currentUser.fullName || 'Rahul Varma'}
                       </Text>
+
+                      <View style={styles.rollBadgeRow}>
+                        <Text style={styles.rollLabel}>Roll No:</Text>
+                        <View style={styles.rollBadge}>
+                          <Text style={styles.rollBadgeText}>
+                            {currentUser?.student?.roll_number || '22CSE042'}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
 
@@ -1072,7 +1136,7 @@ export default function App() {
                   <View style={styles.qrContainerCompact}>
                     <QRCode
                       value={studentQrToken}
-                      size={130}
+                      size={118}
                       color="#0f2744"
                       backgroundColor="#ffffff"
                     />
@@ -1956,18 +2020,51 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center'
   },
+  idCardProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8
+  },
+  idCardPhoto: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+    backgroundColor: '#f1f5f9'
+  },
+  idCardPhotoPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  idCardPhotoPlaceholderText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f2744'
+  },
+  idCardNameBlock: {
+    flex: 1,
+    justifyContent: 'center'
+  },
   studentName: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
     color: '#0f2744',
-    lineHeight: 22
+    lineHeight: 20
   },
   rollBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
-    marginBottom: 8
+    gap: 5,
+    marginTop: 3,
+    marginBottom: 0
   },
   rollLabel: {
     fontSize: 11,

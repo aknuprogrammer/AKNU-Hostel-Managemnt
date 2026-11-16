@@ -14,6 +14,7 @@ export interface User {
   roleDisplay: string;
   assignedHostels?: Array<{ id: string; name: string; code: string; category: string }>;
   assignedCategory?: 'boys' | 'girls' | 'all';
+  photo_url?: string;
   student?: StudentProfile | null;
 }
 

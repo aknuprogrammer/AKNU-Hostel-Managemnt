@@ -237,9 +237,11 @@ export const App: React.FC = () => {
               </p>
 
               {loginError && (
-                <div className="mt-4 p-3.5 rounded-md bg-[#FEE2E2] border border-[#991B1B]/30 text-[#991B1B] text-xs sm:text-sm font-semibold flex items-center space-x-2">
-                  <span className="font-bold">Error:</span>
-                  <span>{loginError}</span>
+                <div className="mt-4 p-3.5 rounded-md bg-[#FEE2E2] border border-[#991B1B]/30 text-[#991B1B] text-xs sm:text-sm font-semibold space-y-2">
+                  <div className="flex items-center space-x-2">
+                    {/* <span className="font-bold">Error:</span> */}
+                    <span>{loginError}</span>
+                  </div>
                 </div>
               )}
 

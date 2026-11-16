@@ -16,17 +16,47 @@ export async function login(req: Request, res: Response): Promise<void> {
   }
 
   try {
+    const cleanIdentifier = email.trim();
+
+    // 1. Check if identifier belongs to a student
+    const studentCheck = await executeQuery(
+      `SELECT s.id, s.full_name, s.email, s.roll_number, s.user_id, u.is_first_login,
+              sa.id as alloc_id, sa.hostel_id, r.room_number
+       FROM students s
+       LEFT JOIN users u ON s.user_id = u.id
+       LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
+       LEFT JOIN rooms r ON sa.room_id = r.id
+       WHERE LOWER(s.email) = LOWER($1) OR UPPER(s.roll_number) = UPPER($1)`,
+      [cleanIdentifier]
+    );
+
+    if (studentCheck.rowCount > 0) {
+      const student = studentCheck.rows[0];
+
+      // A student whose account has not yet been activated/registered by them (is_first_login is true or user_id is null)
+      if (!student.user_id || student.is_first_login) {
+        res.status(400).json({
+          success: false,
+          error: 'Account is not yet created. Please create the account and login.'
+        });
+        return;
+      }
+    }
+
     const userResult = await executeQuery(
       `SELECT u.id, u.email, u.password_hash, u.full_name, u.phone, u.role, u.gender_wing, u.is_active, u.is_first_login, r.display_name as role_display
        FROM users u
        JOIN roles r ON u.role = r.id
        LEFT JOIN students s ON s.user_id = u.id
        WHERE LOWER(u.email) = LOWER($1) OR UPPER(s.roll_number) = UPPER($1)`,
-      [email.trim()]
+      [cleanIdentifier]
     );
 
     if (userResult.rowCount === 0) {
-      res.status(401).json({ success: false, error: 'Invalid email/roll number or password' });
+      res.status(400).json({
+        success: false,
+        error: 'Account is not yet created. Please create the account and login.'
+      });
       return;
     }
 
@@ -36,8 +66,24 @@ export async function login(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Double check: if user is student and is_first_login is true, prompt to create account
+    if (user.role === 'student' && user.is_first_login) {
+      res.status(400).json({
+        success: false,
+        error: 'Account is not yet created. Please create the account and login.'
+      });
+      return;
+    }
+
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
+      if (user.role === 'student' && user.is_first_login) {
+        res.status(400).json({
+          success: false,
+          error: 'Account is not yet created. Please create the account and login.'
+        });
+        return;
+      }
       res.status(401).json({ success: false, error: 'Invalid email address or password' });
       return;
     }
@@ -94,12 +140,12 @@ export async function login(req: Request, res: Response): Promise<void> {
       if (studentRes.rowCount > 0) {
         studentProfile = studentRes.rows[0];
 
-        // RULE ENFORCEMENT:
-        // A student cannot complete first-time registration / portal sign in until hostel & room are allocated
-        if (!studentProfile.hostel_id && user.is_first_login) {
+        // STRICT RULE ENFORCEMENT:
+        // A student cannot register or sign in until hostel accommodation and room have been officially allocated
+        if (!studentProfile.hostel_id || !studentProfile.room_number) {
           res.status(403).json({
             success: false,
-            error: 'Hostel accommodation not yet allocated. You can only register and activate your student portal once your hostel and room have been allocated by the warden.'
+            error: 'Hostel accommodation not yet allocated. You can only register and sign in to your student portal once your hostel and room have been officially allocated by the Chief Warden.'
           });
           return;
         }
@@ -148,6 +194,7 @@ export async function login(req: Request, res: Response): Promise<void> {
         roleDisplay: user.role_display,
         assignedHostels: hostelAssignments.rows,
         assignedCategory,
+        photo_url: studentProfile?.photo_url || null,
         student: studentProfile
       }
     });
@@ -249,6 +296,7 @@ export async function getCurrentUser(req: AuthRequest, res: Response): Promise<v
         roleDisplay: user.role_display,
         assignedHostels: hostelAssignments.rows,
         assignedCategory,
+        photo_url: studentProfile?.photo_url || null,
         student: studentProfile
       }
     });
@@ -428,6 +476,24 @@ export async function forgotPasswordSendOtp(req: Request, res: Response): Promis
     }
 
     const user = userRes.rows[0];
+
+    // Gatekeeper rule: Students cannot reset password or register if hostel is not allocated
+    if (user.role === 'student') {
+      const allocCheck = await executeQuery(
+        `SELECT sa.id FROM student_allocations sa 
+         JOIN students s ON s.id = sa.student_id 
+         WHERE s.user_id = $1 AND sa.status = 'active'`,
+        [user.id]
+      );
+      if (allocCheck.rowCount === 0) {
+        res.status(403).json({
+          success: false,
+          error: 'Hostel allocation pending. You have not been allocated a hostel room yet. You can only access your resident account once your hostel and room have been officially allocated by the Chief Warden.'
+        });
+        return;
+      }
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
 
     // Invalidate prior unused OTPs for this user
@@ -571,11 +637,11 @@ export async function studentActivationSendOtp(req: Request, res: Response): Pro
 
     const row = studentRes.rows[0];
 
-    // 2. Gatekeeper rule: Hostel must be allocated first
-    if (!row.alloc_id) {
+    // 2. Gatekeeper rule: Hostel and room must be allocated first
+    if (!row.alloc_id || !row.hostel_name || !row.room_number) {
       res.status(403).json({
         success: false,
-        error: `Hostel allocation pending. You have not been allocated a hostel room yet. You can only register and activate your student account once the warden has allocated your hostel, floor, and room.`
+        error: `Hostel allocation pending. You have not been allocated a hostel room yet. You can only register and activate your student account once the warden has officially allocated your hostel, floor, and room.`
       });
       return;
     }
@@ -699,11 +765,11 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
 
     const studentProfile = studentRes.rows[0];
 
-    // Gatekeeper rule: Hostel must be allocated first
-    if (!studentProfile.alloc_id) {
+    // Gatekeeper rule: Hostel and room must be allocated first
+    if (!studentProfile.alloc_id || !studentProfile.hostel_id || !studentProfile.room_number) {
       res.status(403).json({
         success: false,
-        error: 'Hostel accommodation not yet allocated. You can only register and activate your student account once your hostel and room have been allocated.'
+        error: 'Hostel accommodation not yet allocated. You can only register and activate your student account once your hostel and room have been officially allocated by the Chief Warden.'
       });
       return;
     }
@@ -811,6 +877,7 @@ export async function studentActivationVerifyAndRegister(req: Request, res: Resp
         roleDisplay: 'Student Resident',
         assignedHostels: [],
         assignedCategory: studentProfile.hostel_category || 'all',
+        photo_url: studentProfile?.photo_url || null,
         student: studentProfile
       }
     });

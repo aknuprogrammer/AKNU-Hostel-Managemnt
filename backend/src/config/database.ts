@@ -67,11 +67,18 @@ export async function getDb() {
         console.warn('[Database Recovery] WAL checkpoint was corrupted from abrupt process termination. Recovering clean data directory...');
         try {
           const backupDir = `${dataDir}_corrupt_${Date.now()}`;
-          fs.renameSync(dataDir, backupDir);
-          fs.mkdirSync(dataDir, { recursive: true });
-          pgliteInstance = new PGlite(dataDir);
+          let activeDir = dataDir;
+          try {
+            fs.renameSync(dataDir, backupDir);
+            fs.mkdirSync(dataDir, { recursive: true });
+          } catch (renameErr: any) {
+            console.warn(`[Database Recovery] renameSync not permitted on Windows (${renameErr.message}), initializing fresh versioned storage.`);
+            activeDir = `${dataDir}_v_${Date.now()}`;
+            fs.mkdirSync(activeDir, { recursive: true });
+          }
+          pgliteInstance = new PGlite(activeDir);
           await pgliteInstance.waitReady;
-          console.log('[Database Recovery] Clean database storage initialized. Schema and seeds will be auto-applied.');
+          console.log(`[Database Recovery] Clean database storage initialized at ${activeDir}. Schema and seeds will be auto-applied.`);
         } catch (recoverErr) {
           console.error('[Database Fatal] Unable to recover PGlite instance:', recoverErr);
           throw lastErr;

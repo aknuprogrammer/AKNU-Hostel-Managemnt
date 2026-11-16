@@ -110,10 +110,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               </Button>
             )}
 
-            {/* Active User Info */}
-            <div className="hidden lg:flex flex-col text-right">
-              <span className="text-sm font-semibold text-white leading-tight">{user?.fullName}</span>
-              <span className="text-[11px] text-slate-300">{user?.roleDisplay}</span>
+            {/* Active User Info & Avatar */}
+            <div className="hidden sm:flex items-center gap-2.5">
+              {(user?.student?.photo_url || user?.photo_url) ? (
+                <img
+                  src={user.student?.photo_url || user.photo_url}
+                  alt={user.fullName}
+                  className="w-8 h-8 rounded-full object-cover border-2 border-[#E0AD83] shadow-xs shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-[#354D70] border border-[#A9C0E4]/40 flex items-center justify-center font-bold text-xs text-[#F0E0D2] shrink-0">
+                  {user?.fullName?.charAt(0) || 'U'}
+                </div>
+              )}
+              <div className="hidden lg:flex flex-col text-right">
+                <span className="text-sm font-semibold text-white leading-tight">{user?.fullName}</span>
+                <span className="text-[11px] text-slate-300">{user?.roleDisplay}</span>
+              </div>
             </div>
 
             {/* Logout */}

@@ -1,5 +1,8 @@
 import bcrypt from 'bcryptjs';
+import fs from 'fs';
+import path from 'path';
 import { executeQuery } from '../config/database.js';
+import { generateQrSalt, signStudentQrToken } from '../utils/qr.js';
 
 export async function seedDatabase() {
   console.log('[Seed] Verifying AKNU database base records...');
@@ -168,6 +171,138 @@ export async function seedDatabase() {
   await executeQuery(`
     CREATE INDEX IF NOT EXISTS idx_proxy_target_date ON proxy_meal_permissions(target_student_id, service_date, meal_session_id)
   `);
+
+  // 7. Base Hostels, Floors, Rooms & Beds
+  const hostelCount = await executeQuery('SELECT COUNT(*) as count FROM hostels');
+  if (parseInt(hostelCount.rows[0].count) === 0) {
+    console.log('[Seed] Seeding AKNU campus hostels and rooms...');
+    
+    // Hostels
+    await executeQuery(`
+      INSERT INTO hostels (id, name, code, category, campus, total_capacity, status)
+      VALUES 
+        ('hostel-vbh', 'Vynatheya Boys Hostel', 'VBH', 'boys', 'Main Campus, Rajahmundry', 100, 'active'),
+        ('hostel-gh1', 'Godavari Bhavan', 'BH-1', 'boys', 'Main Campus, Rajahmundry', 120, 'active'),
+        ('hostel-sgh', 'Saraswati Girls Hostel', 'SGH-1', 'girls', 'Main Campus, Rajahmundry', 100, 'active')
+      ON CONFLICT (id) DO NOTHING
+    `);
+
+    // Blocks & Floors for VBH
+    await executeQuery(`
+      INSERT INTO blocks (id, hostel_id, name, code)
+      VALUES ('block-vbh-a', 'hostel-vbh', 'Block A', 'A')
+      ON CONFLICT (id) DO NOTHING
+    `);
+
+    await executeQuery(`
+      INSERT INTO floors (id, block_id, floor_number, name)
+      VALUES 
+        ('floor-vbh-1', 'block-vbh-a', 1, 'First Floor'),
+        ('floor-vbh-2', 'block-vbh-a', 2, 'Second Floor')
+      ON CONFLICT (id) DO NOTHING
+    `);
+
+    // Rooms for VBH
+    await executeQuery(`
+      INSERT INTO rooms (id, floor_id, hostel_id, room_number, room_type, capacity, current_occupancy, status)
+      VALUES 
+        ('room-vbh-101', 'floor-vbh-1', 'hostel-vbh', '101', 'double', 2, 0, 'active'),
+        ('room-vbh-102', 'floor-vbh-1', 'hostel-vbh', '102', 'double', 2, 1, 'active'),
+        ('room-vbh-201', 'floor-vbh-2', 'hostel-vbh', '201', 'double', 2, 0, 'active')
+      ON CONFLICT (id) DO NOTHING
+    `);
+
+    // Beds for VBH Room 102
+    await executeQuery(`
+      INSERT INTO beds (id, room_id, bed_number, status)
+      VALUES 
+        ('bed-vbh-102-1', 'room-vbh-102', 'Bed 1', 'occupied'),
+        ('bed-vbh-102-2', 'room-vbh-102', 'Bed 2', 'vacant'),
+        ('bed-vbh-101-1', 'room-vbh-101', 'Bed 1', 'vacant'),
+        ('bed-vbh-101-2', 'room-vbh-101', 'Bed 2', 'vacant')
+      ON CONFLICT (id) DO NOTHING
+    `);
+
+    // Wardens
+    await executeQuery(`
+      INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
+      VALUES 
+        ('usr-chief-warden', 'chiefwarden@aknu.edu.in', $1, 'Prof. T. V. Ramana (Chief Warden)', '9848011222', 'chief_warden', 'all', true),
+        ('usr-warden-boys', 'warden@aknu.edu.in', $1, 'Dr. K. Srinivas (Warden)', '9848011223', 'assistant_warden', 'boys', true)
+      ON CONFLICT (id) DO NOTHING
+    `, [passwordHash]);
+
+    await executeQuery(`
+      INSERT INTO user_hostel_assignments (id, user_id, hostel_id)
+      VALUES 
+        ('uha-cw-vbh', 'usr-chief-warden', 'hostel-vbh'),
+        ('uha-cw-gh1', 'usr-chief-warden', 'hostel-gh1'),
+        ('uha-cw-sgh', 'usr-chief-warden', 'hostel-sgh'),
+        ('uha-wb-vbh', 'usr-warden-boys', 'hostel-vbh'),
+        ('uha-wb-gh1', 'usr-warden-boys', 'hostel-gh1')
+      ON CONFLICT (id) DO NOTHING
+    `);
+  }
+
+  // 8. Resident Student N. Rajesh (25PHDCSE01) with Face Photo & Allocation
+  const rajeshCheck = await executeQuery("SELECT id FROM students WHERE roll_number = '25PHDCSE01'");
+  if (rajeshCheck.rowCount === 0) {
+    console.log('[Seed] Seeding resident student N. Rajesh (25PHDCSE01) with registered biometric photo...');
+    
+    // Read photo if available
+    let studentPhoto = null;
+    const photoPath = path.resolve(__dirname, '../../data/extracted_rajesh_photo.txt');
+    if (fs.existsSync(photoPath)) {
+      studentPhoto = fs.readFileSync(photoPath, 'utf8').trim();
+    }
+
+    const studentUserId = 'usr-student-rajesh';
+    const studentId = 'stu-rajesh-phd';
+    const regNumber = 'AKNU/2026/BH1/PHD/CSE/0001';
+    const salt = generateQrSalt();
+    const qrToken = signStudentQrToken(studentId, regNumber, salt);
+
+    // Create student User account
+    await executeQuery(`
+      INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active, is_first_login)
+      VALUES ($1, 'nrajesh@aknu.edu.in', $2, 'N. Rajesh', '9848091122', 'student', 'boys', true, false)
+      ON CONFLICT (id) DO UPDATE SET is_active = true, is_first_login = false
+    `, [studentUserId, passwordHash]);
+
+    // Create student profile
+    await executeQuery(`
+      INSERT INTO students (
+        id, student_id_code, roll_number, reg_number, full_name, photo_url,
+        gender, department_id, course_id, program_level, academic_year_id,
+        year_of_study, current_semester, phone, email, permanent_address,
+        guardian_name, guardian_phone, hostel_status, mess_eligibility,
+        eligible_meal_sessions, qr_credential_token, qr_salt, qr_status,
+        user_id, admission_fee_status, admission_fee_total, admission_fee_paid,
+        admission_fee_payment_date, admission_fee_receipt_no, admission_fee_payment_mode
+      ) VALUES (
+        $1, 'STD-2026-PHD-001', '25PHDCSE01', $2, 'N. Rajesh', $3,
+        'male', 'dept-cse', 'crs-phd', 'PhD', 'ay-2026-27',
+        1, 1, '9848091122', 'nrajesh@aknu.edu.in', 'D.No 12-4, Danavaipeta, Rajahmundry, AP 533103',
+        'N. Subba Rao', '9848091123', 'active', true,
+        '["breakfast","lunch","snacks","dinner"]', $4, $5, 'active',
+        $6, 'paid', 25000, 25000,
+        '2026-10-20', 'UPI-2026-9921', 'upi'
+      )
+      ON CONFLICT (id) DO NOTHING
+    `, [studentId, regNumber, studentPhoto, qrToken, salt, studentUserId]);
+
+    // Create room allocation
+    await executeQuery(`
+      INSERT INTO student_allocations (
+        id, student_id, hostel_id, room_id, bed_id,
+        academic_year_id, check_in_date, status, created_by, notes
+      ) VALUES (
+        'alloc-rajesh', $1, 'hostel-vbh', 'room-vbh-102', 'bed-vbh-102-1',
+        'ay-2026-27', '2026-07-01', 'active', 'usr-admin', 'Official PhD scholar allocation'
+      )
+      ON CONFLICT (id) DO NOTHING
+    `, [studentId]);
+  }
 
   console.log('[Seed] Database ready: Super Admin active, academic master list verified, live data preserved.');
 }
