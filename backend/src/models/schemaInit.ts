@@ -37,6 +37,8 @@ export async function initializeSchema() {
   // Ensure new columns exist on existing tables regardless of DB engine
   try {
     await executeQuery('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_first_login BOOLEAN DEFAULT FALSE');
+    await executeQuery('ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)');
+    await executeQuery("UPDATE users SET plain_password = 'Aknu@2026!' WHERE plain_password IS NULL");
     await executeQuery("ALTER TABLE courses ADD COLUMN IF NOT EXISTS program_level VARCHAR(20) DEFAULT 'UG'");
     await executeQuery("ALTER TABLE students ADD COLUMN IF NOT EXISTS program_level VARCHAR(20) DEFAULT 'UG'");
     await executeQuery("ALTER TABLE user_hostel_assignments ADD COLUMN IF NOT EXISTS role VARCHAR(50)");

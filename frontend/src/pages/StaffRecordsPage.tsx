@@ -16,6 +16,9 @@ import {
   Trash2,
   Pencil,
   Lock,
+  Eye,
+  EyeOff,
+  Key,
   Info,
   X
 } from 'lucide-react';
@@ -46,6 +49,7 @@ interface AssignedHostel {
 interface StaffMember {
   id: string;
   email: string;
+  password?: string;
   full_name: string;
   phone?: string;
   role: string;
@@ -84,10 +88,22 @@ export const StaffRecordsPage: React.FC = () => {
   const [role, setRole] = useState('junior_assistant');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('Aknu@2026!');
+  const [showAddPassword, setShowAddPassword] = useState(false);
   const [selectedHostelIds, setSelectedHostelIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  // Password visibility state in table (keyed by member.id)
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  const togglePasswordVisibility = (id: string) => {
+    setVisiblePasswords((prev) => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   // Edit staff modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -96,6 +112,8 @@ export const StaffRecordsPage: React.FC = () => {
   const [editRole, setEditRole] = useState('junior_assistant');
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
   const [editSelectedHostelIds, setEditSelectedHostelIds] = useState<string[]>([]);
   const [editIsActive, setEditIsActive] = useState(true);
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -141,6 +159,7 @@ export const StaffRecordsPage: React.FC = () => {
           role,
           email: email.trim() || undefined,
           phone: phone.trim() || undefined,
+          password: password.trim() || undefined,
           hostelIds: selectedHostelIds
         }
       });
@@ -150,6 +169,8 @@ export const StaffRecordsPage: React.FC = () => {
         setFullName('');
         setEmail('');
         setPhone('');
+        setPassword('Aknu@2026!');
+        setShowAddPassword(false);
         setSelectedHostelIds([]);
         await fetchStaff();
         setTimeout(() => setSuccessMsg(''), 4000);
@@ -184,6 +205,8 @@ export const StaffRecordsPage: React.FC = () => {
     setEditRole(member.role || 'junior_assistant');
     setEditEmail(member.email || '');
     setEditPhone(member.phone || '');
+    setEditPassword(member.password || '');
+    setShowEditPassword(false);
     const currentIds = member.hostel_ids || (member.assigned_hostels ? member.assigned_hostels.map((h) => h.id) : (member.hostel_id ? [member.hostel_id] : []));
     setEditSelectedHostelIds(currentIds);
     setEditIsActive(member.is_active ?? true);
@@ -204,6 +227,7 @@ export const StaffRecordsPage: React.FC = () => {
           role: editRole,
           email: editEmail.trim(),
           phone: editPhone.trim(),
+          password: editPassword.trim() || undefined,
           hostelIds: editSelectedHostelIds,
           isActive: editIsActive
         }
@@ -356,6 +380,7 @@ export const StaffRecordsPage: React.FC = () => {
               <TableRow>
                 <TableHead>Staff Member</TableHead>
                 <TableHead>Assigned Role</TableHead>
+                <TableHead>Password</TableHead>
                 <TableHead>Assigned Hostels</TableHead>
                 <TableHead>Contact Phone</TableHead>
                 <TableHead align="right">Actions</TableHead>
@@ -363,9 +388,9 @@ export const StaffRecordsPage: React.FC = () => {
             </TableHeader>
             <TableBody>
               {loading ? (
-                <TableLoading colSpan={6} message="Loading staff records..." />
+                <TableLoading colSpan={7} message="Loading staff records..." />
               ) : filteredStaff.length === 0 ? (
-                <TableEmpty colSpan={6} message="No staff records found matching your filters." />
+                <TableEmpty colSpan={7} message="No staff records found matching your filters." />
               ) : (
                 filteredStaff.map((member) => (
                   <TableRow key={member.id}>
@@ -392,6 +417,26 @@ export const StaffRecordsPage: React.FC = () => {
 
                     <TableCell>
                       <span className="font-semibold text-slate-700">{member.role_display}</span>
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="inline-flex items-center space-x-2 bg-slate-50 border border-slate-200/90 px-2.5 py-1 rounded-md shadow-2xs">
+                        <span className="font-mono text-xs font-semibold text-slate-800 tracking-wider select-all">
+                          {visiblePasswords[member.id] ? (member.password || 'Aknu@2026!') : '••••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => togglePasswordVisibility(member.id)}
+                          className="p-0.5 text-slate-400 hover:text-slate-700 transition rounded focus:outline-none cursor-pointer"
+                          title={visiblePasswords[member.id] ? 'Hide password' : 'View password'}
+                        >
+                          {visiblePasswords[member.id] ? (
+                            <EyeOff className="w-3.5 h-3.5 text-amber-600" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5 text-slate-500" />
+                          )}
+                        </button>
+                      </div>
                     </TableCell>
 
                     <TableCell>
@@ -530,6 +575,33 @@ export const StaffRecordsPage: React.FC = () => {
             <p className="text-[11px] text-slate-500 mt-1">
               Supports personal Gmail accounts (e.g. name@gmail.com) or official AKNU email addresses.
             </p>
+          </div>
+
+          <div>
+            <Input
+              required
+              label="Staff Portal Password *"
+              type={showAddPassword ? 'text' : 'password'}
+              placeholder="e.g. Aknu@2026!"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              helperText="Set by administrator. Staff will use this password along with their email to sign in."
+              rightIcon={
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowAddPassword(!showAddPassword)}
+                  className="focus:outline-none hover:text-slate-700 cursor-pointer p-0.5"
+                  title={showAddPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showAddPassword ? (
+                    <EyeOff className="w-4 h-4 text-amber-600" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-slate-400" />
+                  )}
+                </button>
+              }
+            />
           </div>
 
           <div>
@@ -706,6 +778,32 @@ export const StaffRecordsPage: React.FC = () => {
               placeholder="e.g. warden@gmail.com or staff@aknu.edu.in"
               value={editEmail}
               onChange={(e) => setEditEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Input
+              label="Staff Portal Password"
+              type={showEditPassword ? 'text' : 'password'}
+              placeholder="e.g. Aknu@2026!"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              helperText="View or update staff password. Leave unchanged to keep the current password."
+              rightIcon={
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowEditPassword(!showEditPassword)}
+                  className="focus:outline-none hover:text-slate-700 cursor-pointer p-0.5"
+                  title={showEditPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showEditPassword ? (
+                    <EyeOff className="w-4 h-4 text-amber-600" />
+                  ) : (
+                    <Eye className="w-4 h-4 text-slate-400" />
+                  )}
+                </button>
+              }
             />
           </div>
 

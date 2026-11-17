@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(50) PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    plain_password VARCHAR(255),
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     role VARCHAR(50) NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,

@@ -22,6 +22,7 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
 
     const result = await executeQuery(`
       SELECT u.id, u.email, u.full_name, u.phone, u.role, u.is_active, u.created_at, u.gender_wing,
+             u.plain_password as password,
              r.display_name as role_display,
              COALESCE(
                JSON_AGG(
@@ -34,7 +35,7 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
       LEFT JOIN user_hostel_assignments uha ON u.id = uha.user_id
       LEFT JOIN hostels h ON uha.hostel_id = h.id
       ${whereSql}
-      GROUP BY u.id, u.email, u.full_name, u.phone, u.role, u.is_active, u.created_at, u.gender_wing, r.display_name
+      GROUP BY u.id, u.email, u.full_name, u.phone, u.role, u.is_active, u.created_at, u.gender_wing, u.plain_password, r.display_name
       ORDER BY u.full_name ASC
     `, params);
 
@@ -54,6 +55,7 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
 
       return {
         ...row,
+        password: row.password || 'Aknu@2026!',
         assigned_hostels: assignedHostels,
         hostel_ids: hostelIds,
         hostel_id: assignedHostels[0]?.id || null,
@@ -71,7 +73,7 @@ export async function getStaffList(req: AuthRequest, res: Response): Promise<voi
 }
 
 export async function addStaffRecord(req: AuthRequest, res: Response): Promise<void> {
-  const { fullName, role, email, phone, hostelId, hostelIds } = req.body;
+  const { fullName, role, email, phone, hostelId, hostelIds, password } = req.body;
 
   if (!fullName || !role) {
     res.status(400).json({ success: false, error: 'Full name and role are required' });
@@ -98,6 +100,10 @@ export async function addStaffRecord(req: AuthRequest, res: Response): Promise<v
     staffEmail = `staff.${Date.now().toString().slice(-6)}@aknu.edu.in`;
   }
 
+  const staffPassword = (password && typeof password === 'string' && password.trim().length > 0)
+    ? password.trim()
+    : 'Aknu@2026!';
+
   try {
     // Check if email already exists
     const existing = await executeQuery('SELECT id FROM users WHERE LOWER(email) = LOWER($1)', [staffEmail]);
@@ -107,7 +113,7 @@ export async function addStaffRecord(req: AuthRequest, res: Response): Promise<v
     }
 
     const newId = `usr-${uuidv4().slice(0, 8)}`;
-    const defaultHash = await bcrypt.hash('Aknu@2026!', 10);
+    const defaultHash = await bcrypt.hash(staffPassword, 10);
 
     await executeTransaction(async (query) => {
       let staffWing = 'all';
@@ -124,9 +130,9 @@ export async function addStaffRecord(req: AuthRequest, res: Response): Promise<v
       }
 
       await query(
-        `INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
-        [newId, staffEmail, defaultHash, fullName.trim(), phone || null, role, staffWing]
+        `INSERT INTO users (id, email, password_hash, plain_password, full_name, phone, role, gender_wing, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
+        [newId, staffEmail, defaultHash, staffPassword, fullName.trim(), phone || null, role, staffWing]
       );
 
       for (const hId of targetHostelIds) {
@@ -162,6 +168,7 @@ export async function addStaffRecord(req: AuthRequest, res: Response): Promise<v
         fullName,
         role,
         email: staffEmail,
+        password: staffPassword,
         hostelIds: targetHostelIds,
         isRecordOnly: RECORD_ONLY_ROLES.includes(role)
       }
@@ -210,7 +217,7 @@ export async function deleteStaffRecord(req: AuthRequest, res: Response): Promis
 
 export async function updateStaffRecord(req: AuthRequest, res: Response): Promise<void> {
   const { id } = req.params;
-  const { fullName, role, email, phone, hostelId, hostelIds, isActive } = req.body;
+  const { fullName, role, email, phone, hostelId, hostelIds, isActive, password } = req.body;
   const hasHostelUpdate = hostelIds !== undefined || hostelId !== undefined;
   const targetHostelIds: string[] = Array.isArray(hostelIds)
     ? hostelIds.filter(Boolean)
@@ -286,6 +293,15 @@ export async function updateStaffRecord(req: AuthRequest, res: Response): Promis
           id
         ]
       );
+
+      if (password && typeof password === 'string' && password.trim().length > 0) {
+        const trimmedPw = password.trim();
+        const newHash = await bcrypt.hash(trimmedPw, 10);
+        await query(
+          `UPDATE users SET password_hash = $1, plain_password = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`,
+          [newHash, trimmedPw, id]
+        );
+      }
 
       if (hasHostelUpdate) {
         await query('DELETE FROM user_hostel_assignments WHERE user_id = $1', [id]);

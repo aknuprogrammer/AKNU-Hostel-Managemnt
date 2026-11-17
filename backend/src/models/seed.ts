@@ -92,19 +92,22 @@ export async function seedDatabase() {
 
   await executeQuery("INSERT INTO academic_years (id, name, start_date, end_date, is_current) VALUES ('ay-2026-27', '2026-2027', '2026-07-01', '2027-06-30', true) ON CONFLICT (id) DO NOTHING");
 
-  // Ensure gender_wing column exists on users
+  // Ensure gender_wing and plain_password columns exist on users
   await executeQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS gender_wing VARCHAR(10) DEFAULT 'all'");
+  await executeQuery("ALTER TABLE users ADD COLUMN IF NOT EXISTS plain_password VARCHAR(255)");
+  await executeQuery("UPDATE users SET plain_password = 'Aknu@2026!' WHERE plain_password IS NULL");
 
   // 3. Super Admin User Account (Campus-wide administrator)
   // ONLY Super Admin is seeded. All Wardens, Assistants, and Staff are added by Super Admin from the UI.
   await executeQuery(
-    `INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
-     VALUES ('usr-admin', 'admin@aknu.edu.in', $1, 'Dr. K. S. Rao (Super Admin)', '9848011221', 'super_admin', 'all', true)
+    `INSERT INTO users (id, email, password_hash, plain_password, full_name, phone, role, gender_wing, is_active)
+     VALUES ('usr-admin', 'admin@aknu.edu.in', $1, 'Aknu@2026!', 'Dr. K. S. Rao (Super Admin)', '9848011221', 'super_admin', 'all', true)
      ON CONFLICT (id) DO UPDATE SET
        email = EXCLUDED.email,
        full_name = EXCLUDED.full_name,
        role = EXCLUDED.role,
        gender_wing = EXCLUDED.gender_wing,
+       plain_password = COALESCE(users.plain_password, EXCLUDED.plain_password),
        is_active = true`,
     [passwordHash]
   );
@@ -225,10 +228,10 @@ export async function seedDatabase() {
 
     // Wardens
     await executeQuery(`
-      INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active)
+      INSERT INTO users (id, email, password_hash, plain_password, full_name, phone, role, gender_wing, is_active)
       VALUES 
-        ('usr-chief-warden', 'chiefwarden@aknu.edu.in', $1, 'Prof. T. V. Ramana (Chief Warden)', '9848011222', 'chief_warden', 'all', true),
-        ('usr-warden-boys', 'warden@aknu.edu.in', $1, 'Dr. K. Srinivas (Warden)', '9848011223', 'assistant_warden', 'boys', true)
+        ('usr-chief-warden', 'chiefwarden@aknu.edu.in', $1, 'Aknu@2026!', 'Prof. T. V. Ramana (Chief Warden)', '9848011222', 'chief_warden', 'all', true),
+        ('usr-warden-boys', 'warden@aknu.edu.in', $1, 'Aknu@2026!', 'Dr. K. Srinivas (Warden)', '9848011223', 'assistant_warden', 'boys', true)
       ON CONFLICT (id) DO NOTHING
     `, [passwordHash]);
 
@@ -303,6 +306,9 @@ export async function seedDatabase() {
       ON CONFLICT (id) DO NOTHING
     `, [studentId]);
   }
+
+  // Ensure all users have plain_password set
+  await executeQuery("UPDATE users SET plain_password = 'Aknu@2026!' WHERE plain_password IS NULL");
 
   console.log('[Seed] Database ready: Super Admin active, academic master list verified, live data preserved.');
 }
