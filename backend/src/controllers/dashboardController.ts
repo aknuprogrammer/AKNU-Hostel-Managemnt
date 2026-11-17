@@ -9,6 +9,7 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
 
   try {
     const isSuperAdmin = req.user?.role === 'super_admin';
+    const assignedHostels = isSuperAdmin ? [] : (req.user?.assignedHostels || ['__no_assigned_hostel__']);
     const wing: 'boys' | 'girls' | null = (!isSuperAdmin && req.user?.assignedCategory && req.user.assignedCategory !== 'all')
       ? req.user.assignedCategory
       : null;
@@ -23,18 +24,18 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       WHERE s.hostel_status = 'active'
     `;
     const studentCountParams: any[] = [];
-    if (wing) {
-      studentCountQuery += ` AND (h.category = $1 OR (sa.hostel_id IS NULL AND s.gender = $2))`;
-      studentCountParams.push(wing, studentGender);
+    if (!isSuperAdmin) {
+      studentCountQuery += ` AND sa.hostel_id = ANY($1)`;
+      studentCountParams.push(assignedHostels);
     }
     const studentCount = parseInt((await executeQuery(studentCountQuery, studentCountParams)).rows[0]?.c || '0');
 
     // 2. Hostel Count
     let hostelCountQuery = 'SELECT COUNT(*) as c FROM hostels';
     const hostelCountParams: any[] = [];
-    if (wing) {
-      hostelCountQuery += ' WHERE category = $1';
-      hostelCountParams.push(wing);
+    if (!isSuperAdmin) {
+      hostelCountQuery += ' WHERE id = ANY($1)';
+      hostelCountParams.push(assignedHostels);
     }
     const hostelCount = parseInt((await executeQuery(hostelCountQuery, hostelCountParams)).rows[0]?.c || '0');
 
@@ -48,9 +49,9 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       JOIN hostels h ON r.hostel_id = h.id
     `;
     const bedStatsParams: any[] = [];
-    if (wing) {
-      bedStatsQuery += ' WHERE h.category = $1';
-      bedStatsParams.push(wing);
+    if (!isSuperAdmin) {
+      bedStatsQuery += ' WHERE h.id = ANY($1)';
+      bedStatsParams.push(assignedHostels);
     }
     const bedStats = (await executeQuery(bedStatsQuery, bedStatsParams)).rows[0] || {
       total_beds: 0,
@@ -66,9 +67,9 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       WHERE mt.service_date = $1 AND mt.status = 'SUCCESS'
     `;
     const todayMealsParams: any[] = [today];
-    if (wing) {
-      todayMealsQuery += ' AND h.category = $2';
-      todayMealsParams.push(wing);
+    if (!isSuperAdmin) {
+      todayMealsQuery += ' AND h.id = ANY($2)';
+      todayMealsParams.push(assignedHostels);
     }
     const todayMeals = parseInt((await executeQuery(todayMealsQuery, todayMealsParams)).rows[0]?.c || '0');
 
@@ -80,9 +81,9 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       WHERE c.status NOT IN ('resolved', 'closed')
     `;
     const complaintsParams: any[] = [];
-    if (wing) {
-      complaintsQuery += ' AND h.category = $1';
-      complaintsParams.push(wing);
+    if (!isSuperAdmin) {
+      complaintsQuery += ' AND h.id = ANY($1)';
+      complaintsParams.push(assignedHostels);
     }
     const activeComplaints = parseInt((await executeQuery(complaintsQuery, complaintsParams)).rows[0]?.c || '0');
 
@@ -96,9 +97,9 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       WHERE la.status = 'submitted'
     `;
     const leavesParams: any[] = [];
-    if (wing) {
-      leavesQuery += ` AND (h.category = $1 OR (sa.hostel_id IS NULL AND s.gender = $2))`;
-      leavesParams.push(wing, studentGender);
+    if (!isSuperAdmin) {
+      leavesQuery += ` AND sa.hostel_id = ANY($1)`;
+      leavesParams.push(assignedHostels);
     }
     const pendingLeaves = parseInt((await executeQuery(leavesQuery, leavesParams)).rows[0]?.c || '0');
 
@@ -133,9 +134,9 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
       FROM hostels h
     `;
     const hostelsListParams: any[] = [];
-    if (wing) {
-      hostelsListQuery += ` WHERE h.category = $1`;
-      hostelsListParams.push(wing);
+    if (!isSuperAdmin) {
+      hostelsListQuery += ` WHERE h.id = ANY($1)`;
+      hostelsListParams.push(assignedHostels);
     }
     hostelsListQuery += ` ORDER BY h.category ASC, h.name ASC`;
 

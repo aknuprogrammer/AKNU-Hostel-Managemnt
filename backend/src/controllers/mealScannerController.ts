@@ -975,13 +975,19 @@ export async function recognizeAndVerifyMealScan(req: AuthRequest, res: Response
 
     if (wing) {
       const gender = wing === 'girls' ? 'female' : 'male';
-      whereClauses.push(`(s.gender = $${pIdx} AND (h.category = $${pIdx + 1} OR sa.hostel_id IS NULL))`);
+      whereClauses.push(`(s.gender = $${pIdx} AND h.category = $${pIdx + 1})`);
       params.push(gender, wing);
       pIdx += 2;
     }
 
+    if (!isSuperAdmin) {
+      whereClauses.push(`sa.hostel_id = ANY($${pIdx})`);
+      params.push(req.user?.assignedHostels || ['__no_assigned_hostel__']);
+      pIdx++;
+    }
+
     if (hostelId) {
-      whereClauses.push(`(sa.hostel_id = $${pIdx} OR sa.hostel_id IS NULL)`);
+      whereClauses.push(`sa.hostel_id = $${pIdx}`);
       params.push(hostelId);
       pIdx++;
     }

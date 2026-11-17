@@ -226,9 +226,9 @@ export const MealScannerPage: React.FC = () => {
       const res = await apiRequest<{ success: boolean; data: any[] }>('/hostels');
       if (res.success) {
         setHostels(res.data);
-        if (res.data.length > 0) {
-          setSelectedHostelId((prev) => prev || res.data[0].id);
-        }
+        setSelectedHostelId((prev) =>
+          res.data.some((hostel) => hostel.id === prev) ? prev : (res.data[0]?.id || '')
+        );
       }
     } catch (e) {
       console.error('Failed to load hostels:', e);
