@@ -364,6 +364,30 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                <div>
+                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
+                  Course / Degree {availableFilters.courses.length > 0 && `(${availableFilters.courses.length})`}
+                </label>
+                <select
+                  value={batchCourse}
+                  onChange={(e) => setBatchCourse(e.target.value)}
+                  disabled={availableFilters.courses.length === 0}
+                  className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  {availableFilters.courses.length === 0 ? (
+                    <option value="all">No Courses (0)</option>
+                  ) : (
+                    <>
+                      <option value="all">All Courses ({availableFilters.totalUnallocated})</option>
+                      {availableFilters.courses.map((c: any) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.code}) ({c.count})
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
               <div>
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
                   Department {availableFilters.departments.length > 0 && `(${availableFilters.departments.length})`}
@@ -389,30 +413,7 @@ export const SmartAllocationModal: React.FC<SmartAllocationModalProps> = ({
                 </select>
               </div>
 
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Course / Degree {availableFilters.courses.length > 0 && `(${availableFilters.courses.length})`}
-                </label>
-                <select
-                  value={batchCourse}
-                  onChange={(e) => setBatchCourse(e.target.value)}
-                  disabled={availableFilters.courses.length === 0}
-                  className="w-full text-xs rounded-md border border-slate-300 p-1.5 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                  {availableFilters.courses.length === 0 ? (
-                    <option value="all">No Courses (0)</option>
-                  ) : (
-                    <>
-                      <option value="all">All Courses ({availableFilters.totalUnallocated})</option>
-                      {availableFilters.courses.map((c: any) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.code}) ({c.count})
-                        </option>
-                      ))}
-                    </>
-                  )}
-                </select>
-              </div>
+            
 
               <div>
                 <label className="text-[11px] font-semibold text-slate-600 block mb-1">
