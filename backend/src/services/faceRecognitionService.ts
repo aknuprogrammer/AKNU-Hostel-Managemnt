@@ -47,8 +47,19 @@ async function processFaceImage(base64OrBuffer: string | Buffer): Promise<{
   try {
     let buf: Buffer;
     if (typeof base64OrBuffer === 'string') {
-      const cleanBase64 = base64OrBuffer.replace(/^data:image\/[a-z0-9+.-]+;base64,/i, '').trim();
-      buf = Buffer.from(cleanBase64, 'base64');
+      const value = base64OrBuffer.trim();
+      if (/^https?:\/\//i.test(value)) {
+        const response = await fetch(value, { signal: AbortSignal.timeout(10000) });
+        if (!response.ok) throw new Error(`Photo URL returned HTTP ${response.status}`);
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.toLowerCase().startsWith('image/')) throw new Error('Photo URL did not return an image');
+        const arrayBuffer = await response.arrayBuffer();
+        if (arrayBuffer.byteLength > 10 * 1024 * 1024) throw new Error('Photo exceeds the 10 MB limit');
+        buf = Buffer.from(arrayBuffer);
+      } else {
+        const cleanBase64 = value.replace(/^data:image\/[a-z0-9+.-]+;base64,/i, '').trim();
+        buf = Buffer.from(cleanBase64, 'base64');
+      }
     } else {
       buf = base64OrBuffer;
     }
@@ -59,13 +70,8 @@ async function processFaceImage(base64OrBuffer: string | Buffer): Promise<{
 
     const img = await Jimp.read(buf);
 
-    // Focus on face center: crop middle 75% region where face is positioned in reticle
-    const cropW = Math.floor(img.width * 0.75);
-    const cropH = Math.floor(img.height * 0.75);
-    const cropX = Math.floor((img.width - cropW) / 2);
-    const cropY = Math.floor((img.height - cropH) / 2);
-
-    img.crop({ x: cropX, y: cropY, w: cropW, h: cropH });
+    // Preserve the full photo: directory photos may be uploaded or hosted online
+    // and do not always frame the face in the exact center of the image.
     img.resize({ w: 64, h: 64 });
     img.greyscale();
 
@@ -244,8 +250,17 @@ export async function matchFaceAgainstDirectory(
     }
 
     // Reconstruct small 64x64 bitmap for visual distance comparison
+    const profileRgba = Buffer.alloc(profile.pixelArray.length * 4);
+    profile.pixelArray.forEach((pixel, index) => {
+      const value = Math.round(pixel * 255);
+      const offset = index * 4;
+      profileRgba[offset] = value;
+      profileRgba[offset + 1] = value;
+      profileRgba[offset + 2] = value;
+      profileRgba[offset + 3] = 255;
+    });
     const profileImg = await Jimp.fromBitmap({
-      data: Buffer.from(profile.pixelArray.map(p => Math.floor(p * 255))),
+      data: profileRgba,
       width: 64,
       height: 64
     });

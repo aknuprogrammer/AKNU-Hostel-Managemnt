@@ -17,6 +17,24 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   const token = authHeader.split(' ')[1];
   try {
     const decoded = verifyToken(token);
+    // Refresh staff scope from the directory on every request so reassigned hostels
+    // take effect immediately, including for already signed-in staff.
+    if (decoded.role !== 'super_admin' && decoded.role !== 'student') {
+      const assignments = await executeQuery(
+        `SELECT h.id, h.category
+         FROM user_hostel_assignments uha
+         JOIN hostels h ON h.id = uha.hostel_id
+         WHERE uha.user_id = $1`,
+        [decoded.id]
+      );
+      const categories = assignments.rows.map((row: any) => row.category);
+      const allBoys = categories.length > 0 && categories.every((category: string) => category === 'boys');
+      const allGirls = categories.length > 0 && categories.every((category: string) => category === 'girls');
+      decoded.assignedHostels = assignments.rows.length
+        ? assignments.rows.map((row: any) => row.id)
+        : ['__no_assigned_hostel__'];
+      decoded.assignedCategory = allBoys ? 'boys' : allGirls ? 'girls' : 'all';
+    }
     req.user = decoded;
     next();
   } catch (err: any) {

@@ -14,11 +14,14 @@ let pgliteInstance: PGlite | null = null;
 export async function getDb() {
   if (isProductionPg) {
     if (!pgPool) {
+      const dbUrl = process.env.DATABASE_URL || '';
+      const isRemoteDb = dbUrl.length > 0 && !dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1');
+      const useSsl = process.env.NODE_ENV === 'production' || isRemoteDb || dbUrl.includes('sslmode=require');
       pgPool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+        connectionString: dbUrl,
+        ssl: useSsl ? { rejectUnauthorized: false } : false
       });
-      console.log('[Database] Connected to external PostgreSQL via pg.Pool');
+      console.log(`[Database] Connected to external PostgreSQL via pg.Pool (SSL: ${useSsl ? 'enabled' : 'disabled'})`);
     }
     return {
       type: 'pg' as const,

@@ -45,7 +45,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
     const iconSize = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5';
 
     return (
-      <div className={`flex flex-col ${className}`}>
+      <div className={`flex flex-col ${className}`} onClick={(event) => event.stopPropagation()}>
         <label
           htmlFor={checkboxId}
           className={`inline-flex items-start gap-2.5 select-none ${
