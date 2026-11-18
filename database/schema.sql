@@ -374,6 +374,25 @@ CREATE TABLE IF NOT EXISTS food_wastage_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- DAILY STUDENT MEAL ATTENDANCE & FOOD PREPARATION HEADCOUNT
+CREATE TABLE IF NOT EXISTS student_meal_attendance (
+    id VARCHAR(50) PRIMARY KEY,
+    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    hostel_id VARCHAR(50) NOT NULL REFERENCES hostels(id) ON DELETE CASCADE,
+    service_date DATE NOT NULL,
+    breakfast BOOLEAN DEFAULT TRUE,
+    lunch BOOLEAN DEFAULT TRUE,
+    snacks BOOLEAN DEFAULT TRUE,
+    dinner BOOLEAN DEFAULT TRUE,
+    source VARCHAR(20) DEFAULT 'STUDENT_APP' CHECK (source IN ('STUDENT_APP', 'WARDEN_OVERRIDE', 'LEAVE_SYNC', 'DEFAULT')),
+    notes TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_student_meal_date UNIQUE (student_id, service_date)
+);
+CREATE INDEX IF NOT EXISTS idx_meal_attendance_date_hostel ON student_meal_attendance(service_date, hostel_id);
+CREATE INDEX IF NOT EXISTS idx_meal_attendance_student_date ON student_meal_attendance(student_id, service_date);
+
 -- 10. ACCOUNTS & FEES
 CREATE TABLE IF NOT EXISTS fee_structures (
     id VARCHAR(50) PRIMARY KEY,

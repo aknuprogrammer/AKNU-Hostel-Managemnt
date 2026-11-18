@@ -6,7 +6,13 @@ import {
   getMealSessions,
   getInventory,
   recordInventoryTransaction,
-  recordFoodWastage
+  recordFoodWastage,
+  getMealAttendanceCounts,
+  getMealAttendanceRoster,
+  getMyMealAttendance,
+  toggleMyMealAttendance,
+  staffUpdateMealAttendance,
+  staffBulkMarkAttendance
 } from '../controllers/messController.js';
 import { authenticate, requireRoles } from '../middleware/auth.js';
 
@@ -19,5 +25,13 @@ router.delete('/menu/:id', authenticate, requireRoles('super_admin', 'chief_ward
 router.get('/inventory', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), getInventory);
 router.post('/inventory/transactions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), recordInventoryTransaction);
 router.post('/wastage', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), recordFoodWastage);
+
+// Daily Student Meal Attendance & Kitchen Food Preparation Headcount
+router.get('/attendance/counts', authenticate, getMealAttendanceCounts);
+router.get('/attendance/roster', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), getMealAttendanceRoster);
+router.get('/attendance/my-status', authenticate, getMyMealAttendance);
+router.post('/attendance/toggle-my-meal', authenticate, toggleMyMealAttendance);
+router.post('/attendance/staff-override', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), staffUpdateMealAttendance);
+router.post('/attendance/staff-bulk', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), staffBulkMarkAttendance);
 
 export default router;

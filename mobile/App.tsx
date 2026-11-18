@@ -79,6 +79,28 @@ export default function App() {
   const [gateCode, setGateCode] = useState('');
   const [verifiedPass, setVerifiedPass] = useState<any | null>(null);
 
+  // Student Meal Attendance Opt-In state
+  const [mobileMealDate, setMobileMealDate] = useState(new Date().toISOString().split('T')[0]);
+  const [mobileMealAttendance, setMobileMealAttendance] = useState<{
+    breakfast: boolean;
+    lunch: boolean;
+    snacks: boolean;
+    dinner: boolean;
+    isOnLeave: boolean;
+    leaveType: string;
+  }>({
+    breakfast: true,
+    lunch: true,
+    snacks: true,
+    dinner: true,
+    isOnLeave: false,
+    leaveType: ''
+  });
+  const [togglingMobileMeal, setTogglingMobileMeal] = useState<string | null>(null);
+
+  // Warden Kitchen Preparation Counts state
+  const [wardenKitchenCounts, setWardenKitchenCounts] = useState<any>(null);
+
   // Setup password state
   const [setupModalVisible, setSetupModalVisible] = useState(false);
   const [forgotPasswordVisible, setForgotPasswordVisible] = useState(false);
@@ -171,12 +193,74 @@ export default function App() {
       fetchActiveSession();
       fetchRecentScans();
       fetchStudentsDirectory();
+      fetchWardenKitchenCounts();
       const interval = setInterval(() => {
         fetchRecentScans();
+        fetchWardenKitchenCounts();
       }, 8000); // 8s auto-refresh
       return () => clearInterval(interval);
+    } else if (currentUser && currentRole === 'student') {
+      fetchMobileMealAttendance(mobileMealDate);
     }
   }, [currentUser, currentRole]);
+
+  // Fetch student meal attendance
+  const fetchMobileMealAttendance = async (dateToFetch?: string) => {
+    try {
+      const d = dateToFetch || mobileMealDate;
+      const res = await mobileApiRequest<{ success: boolean; data: any }>(`/mess/attendance/my-status?date=${d}`);
+      if (res.success && res.data) {
+        setMobileMealAttendance({
+          breakfast: res.data.breakfast ?? true,
+          lunch: res.data.lunch ?? true,
+          snacks: res.data.snacks ?? true,
+          dinner: res.data.dinner ?? true,
+          isOnLeave: res.data.isOnLeave ?? false,
+          leaveType: res.data.leaveType || ''
+        });
+      }
+    } catch (e) {
+      console.log('Error fetching student meal attendance:', e);
+    }
+  };
+
+  const handleMobileToggleMeal = async (mealKey: 'breakfast' | 'lunch' | 'snacks' | 'dinner', currentVal: boolean) => {
+    const nextVal = !currentVal;
+    setTogglingMobileMeal(mealKey);
+    try {
+      setMobileMealAttendance((prev) => ({ ...prev, [mealKey]: nextVal }));
+      const res = await mobileApiRequest<{ success: boolean; message: string }>('/mess/attendance/toggle-my-meal', {
+        method: 'POST',
+        body: {
+          date: mobileMealDate,
+          meal: mealKey,
+          attending: nextVal
+        }
+      });
+      if (!res.success) {
+        setMobileMealAttendance((prev) => ({ ...prev, [mealKey]: currentVal }));
+        Alert.alert('Notice', res.message || 'Could not update meal attendance.');
+      }
+    } catch (e: any) {
+      setMobileMealAttendance((prev) => ({ ...prev, [mealKey]: currentVal }));
+      Alert.alert('Error', e.message || 'Could not update meal attendance.');
+    } finally {
+      setTogglingMobileMeal(null);
+    }
+  };
+
+  // Fetch warden kitchen counts
+  const fetchWardenKitchenCounts = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const res = await mobileApiRequest<{ success: boolean; data: any }>(`/mess/attendance/counts?date=${today}`);
+      if (res.success && res.data) {
+        setWardenKitchenCounts(res.data);
+      }
+    } catch (e) {
+      console.log('Error loading kitchen counts:', e);
+    }
+  };
 
   // Fetch students directory for counter face recognition
   const fetchStudentsDirectory = async () => {
@@ -843,6 +927,39 @@ export default function App() {
                   <Text style={styles.sessionStatLbl}>Real-time Sync</Text>
                 </View>
               </View>
+
+              {/* Daily Kitchen Preparation Headcounts */}
+              <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.1)' }}>
+                <Text style={{ fontSize: 10, fontWeight: '800', color: '#93c5fd', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                  Kitchen Food Preparation Headcounts (Today)
+                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', padding: 6, borderRadius: 6, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 9, color: '#bfdbfe', fontWeight: '700' }}>Breakfast</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff', marginTop: 2 }}>
+                      {wardenKitchenCounts?.counts?.breakfast?.attending ?? 0}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', padding: 6, borderRadius: 6, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 9, color: '#bfdbfe', fontWeight: '700' }}>Lunch</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff', marginTop: 2 }}>
+                      {wardenKitchenCounts?.counts?.lunch?.attending ?? 0}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', padding: 6, borderRadius: 6, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 9, color: '#bfdbfe', fontWeight: '700' }}>Snacks</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff', marginTop: 2 }}>
+                      {wardenKitchenCounts?.counts?.snacks?.attending ?? 0}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', padding: 6, borderRadius: 6, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 9, color: '#bfdbfe', fontWeight: '700' }}>Dinner</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#fff', marginTop: 2 }}>
+                      {wardenKitchenCounts?.counts?.dinner?.attending ?? 0}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
 
             {/* Live Biometric Face Scanner Viewport */}
@@ -1150,6 +1267,173 @@ export default function App() {
                 <Text style={styles.idCardFooterText}>
                   💡 Keep screen brightness high when presenting at dining counter
                 </Text>
+              </View>
+            </View>
+
+            {/* Daily Meal Attendance Opt-in for Kitchen Food Preparation */}
+            <View style={[styles.card, { borderColor: '#f59e0b', borderWidth: 1.5, backgroundColor: '#fffdfa' }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 16, marginRight: 6 }}>🍽️</Text>
+                  <Text style={[styles.cardTitle, { marginBottom: 0, color: '#92400e' }]}>Daily Meal Attendance</Text>
+                </View>
+                {/* Date Switcher */}
+                <View style={{ flexDirection: 'row', backgroundColor: '#fef3c7', borderRadius: 8, padding: 2 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const t = new Date().toISOString().split('T')[0];
+                      setMobileMealDate(t);
+                      fetchMobileMealAttendance(t);
+                    }}
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 6,
+                      backgroundColor: mobileMealDate === new Date().toISOString().split('T')[0] ? '#f59e0b' : 'transparent'
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 10,
+                      fontWeight: '800',
+                      color: mobileMealDate === new Date().toISOString().split('T')[0] ? '#fff' : '#92400e'
+                    }}>
+                      Today
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => {
+                      const tm = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                      setMobileMealDate(tm);
+                      fetchMobileMealAttendance(tm);
+                    }}
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 6,
+                      backgroundColor: mobileMealDate !== new Date().toISOString().split('T')[0] ? '#f59e0b' : 'transparent'
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 10,
+                      fontWeight: '800',
+                      color: mobileMealDate !== new Date().toISOString().split('T')[0] ? '#fff' : '#92400e'
+                    }}>
+                      Tomorrow
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 11, color: '#78350f', marginBottom: 10 }}>
+                Your response tells the mess kitchen how many plates to prepare for <Text style={{ fontWeight: '800' }}>{mobileMealDate}</Text>:
+              </Text>
+
+              {mobileMealAttendance.isOnLeave ? (
+                <View style={{ backgroundColor: '#fee2e2', padding: 8, borderRadius: 8, marginBottom: 10 }}>
+                  <Text style={{ fontSize: 11, color: '#b91c1c', fontWeight: '700' }}>
+                    ⚠️ Approved Leave Active ({mobileMealAttendance.leaveType?.toUpperCase()}). Meals are paused by default.
+                  </Text>
+                </View>
+              ) : null}
+
+              {/* 4 Interactive Meal Toggle Rows */}
+              <View style={{ gap: 8 }}>
+                {/* Breakfast */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.breakfast ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.breakfast ? '#a7f3d0' : '#e2e8f0' }}>
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌅 Breakfast (07:00 - 10:00)</Text>
+                    <Text style={{ fontSize: 10, color: mobileMealAttendance.breakfast ? '#065f46' : '#64748b', marginTop: 2 }}>
+                      {mobileMealAttendance.breakfast ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={togglingMobileMeal === 'breakfast'}
+                    onPress={() => handleMobileToggleMeal('breakfast', mobileMealAttendance.breakfast)}
+                    style={{
+                      backgroundColor: mobileMealAttendance.breakfast ? '#10b981' : '#94a3b8',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                      {mobileMealAttendance.breakfast ? 'Attending' : 'Skipped'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Lunch */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.lunch ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.lunch ? '#a7f3d0' : '#e2e8f0' }}>
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☀️ Lunch (12:00 - 15:00)</Text>
+                    <Text style={{ fontSize: 10, color: mobileMealAttendance.lunch ? '#065f46' : '#64748b', marginTop: 2 }}>
+                      {mobileMealAttendance.lunch ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={togglingMobileMeal === 'lunch'}
+                    onPress={() => handleMobileToggleMeal('lunch', mobileMealAttendance.lunch)}
+                    style={{
+                      backgroundColor: mobileMealAttendance.lunch ? '#10b981' : '#94a3b8',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                      {mobileMealAttendance.lunch ? 'Attending' : 'Skipped'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Snacks */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.snacks ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.snacks ? '#a7f3d0' : '#e2e8f0' }}>
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☕ Snacks (16:30 - 18:00)</Text>
+                    <Text style={{ fontSize: 10, color: mobileMealAttendance.snacks ? '#065f46' : '#64748b', marginTop: 2 }}>
+                      {mobileMealAttendance.snacks ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={togglingMobileMeal === 'snacks'}
+                    onPress={() => handleMobileToggleMeal('snacks', mobileMealAttendance.snacks)}
+                    style={{
+                      backgroundColor: mobileMealAttendance.snacks ? '#10b981' : '#94a3b8',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                      {mobileMealAttendance.snacks ? 'Attending' : 'Skipped'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Dinner */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.dinner ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.dinner ? '#a7f3d0' : '#e2e8f0' }}>
+                  <View>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌙 Dinner (19:00 - 22:30)</Text>
+                    <Text style={{ fontSize: 10, color: mobileMealAttendance.dinner ? '#065f46' : '#64748b', marginTop: 2 }}>
+                      {mobileMealAttendance.dinner ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={togglingMobileMeal === 'dinner'}
+                    onPress={() => handleMobileToggleMeal('dinner', mobileMealAttendance.dinner)}
+                    style={{
+                      backgroundColor: mobileMealAttendance.dinner ? '#10b981' : '#94a3b8',
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 6
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                      {mobileMealAttendance.dinner ? 'Attending' : 'Skipped'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
