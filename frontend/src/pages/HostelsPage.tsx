@@ -189,10 +189,10 @@ export const HostelsPage: React.FC = () => {
     }
   };
 
-  const handleVacateBed = async (studentId: string, studentName: string) => {
+  const handleVacateBed = async (studentId?: string, studentName?: string, bedId?: string) => {
     const confirmed = await confirm({
       title: 'Vacate Bed Allocation',
-      message: 'Are you sure you want to vacate ' + (studentName || 'this student') + '\'s bed allocation? The bed will immediately return to vacant status.',
+      message: 'Are you sure you want to vacate ' + (studentName || 'this bed allocation') + '? The bed will immediately return to vacant status.',
       confirmText: 'Vacate Bed',
       variant: 'warning'
     });
@@ -202,7 +202,8 @@ export const HostelsPage: React.FC = () => {
       const res = await apiRequest<{ success: boolean; message: string }>('/hostels/batch/vacate', {
         method: 'POST',
         body: {
-          studentIds: [studentId],
+          studentIds: studentId ? [studentId] : [],
+          bedIds: bedId ? [bedId] : [],
           reason: 'Manual bed checkout from grid'
         }
       });
@@ -216,7 +217,7 @@ export const HostelsPage: React.FC = () => {
   };
 
   const handleDeleteBed = async (bedObj: any) => {
-    if (bedObj.bed_status === 'occupied') {
+    if (bedObj.bed_status === 'occupied' && (bedObj.student_id || bedObj.student_name)) {
       await showWarning(
         'Cannot delete ' + bedObj.bed_number + ' because it is currently occupied by ' + (bedObj.student_name || 'a student') + '. Please vacate the resident before deleting the bed.',
         'Bed Occupied'
@@ -440,7 +441,7 @@ export const HostelsPage: React.FC = () => {
                   Edit Hostel
                 </Button>
 
-                {(selectedHostelObj.occupied_beds || 0) === 0 && (
+                {(selectedHostelObj.occupied_beds || 0) === 0 ? (
                   <Button
                     variant="danger"
                     size="xs"
@@ -449,6 +450,17 @@ export const HostelsPage: React.FC = () => {
                     title="Delete this empty hostel"
                   >
                     Delete Hostel
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    disabled
+                    className="opacity-50 cursor-not-allowed text-slate-400 border-slate-200"
+                    leftIcon={<Trash2 className="w-3.5 h-3.5" />}
+                    title={`Cannot delete hostel: ${selectedHostelObj.occupied_beds} resident(s) currently allocated. Please vacate residents first.`}
+                  >
+                    Delete Hostel ({selectedHostelObj.occupied_beds} occupied)
                   </Button>
                 )}
               </div>
@@ -468,39 +480,41 @@ export const HostelsPage: React.FC = () => {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs text-slate-800">
-                      Room {rb.room_number} • {rb.bed_number}
+                      Room {rb.room_number}{rb.bed_number ? ` • ${rb.bed_number}` : ''}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <Badge
-                        variant={rb.bed_status === 'occupied' ? 'primary' : 'success'}
+                        variant={rb.bed_status === 'occupied' ? 'primary' : rb.bed_id ? 'success' : 'neutral'}
                         dot
                       >
-                        {rb.bed_status}
+                        {rb.bed_status === 'occupied' ? 'occupied' : rb.bed_id ? 'vacant' : 'no beds'}
                       </Badge>
-                       </div>
+                    </div>
                   </div>
 
                   <div className="mt-2.5">
-                    {rb.student_name ? (
+                    {rb.bed_status === 'occupied' ? (
                       <div className="flex items-start justify-between gap-1">
                         <div className="min-w-0 flex-1">
-                          <span className="text-xs font-bold text-slate-900 block truncate">{rb.student_name}</span>
-                          <span className="font-mono text-[10px] text-slate-500">{rb.roll_number}</span>
+                          <span className="text-xs font-bold text-slate-900 block truncate">
+                            {rb.student_name || 'Allocated Resident'}
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {rb.roll_number || 'Active Resident'}
+                          </span>
                         </div>
-                        {rb.student_id && (
-                          <IconButton
-                            icon={<UserMinus className="w-3.5 h-3.5" />}
-                            size="xs"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleVacateBed(rb.student_id, rb.student_name);
-                            }}
-                            title="Vacate Bed (Release back to pool)"
-                          />
-                        )}
+                        <IconButton
+                          icon={<UserMinus className="w-3.5 h-3.5 text-rose-600" />}
+                          size="xs"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleVacateBed(rb.student_id, rb.student_name, rb.bed_id);
+                          }}
+                          title="Vacate Bed (Release back to pool)"
+                        />
                       </div>
-                    ) : (
+                    ) : rb.bed_id ? (
                       <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-emerald-100">
                         <span className="text-[11px] text-emerald-700 font-medium">Available</span>
                         <div className="flex items-center gap-1.5">
@@ -523,6 +537,18 @@ export const HostelsPage: React.FC = () => {
                             + Allocate
                           </Button>
                         </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-200">
+                        <span className="text-[11px] text-slate-500 font-medium">No beds added yet</span>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => handleOpenAddBedModal(rb.room_id)}
+                          className="h-6 px-2 text-[11px] text-[#23395D] border-slate-300 hover:bg-slate-50 font-semibold rounded shadow-none"
+                        >
+                          + Add Bed
+                        </Button>
                       </div>
                     )}
                   </div>

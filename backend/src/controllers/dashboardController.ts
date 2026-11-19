@@ -42,11 +42,12 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
     // 3. Bed Stats
     let bedStatsQuery = `
       SELECT COUNT(b.id) as total_beds,
-             COUNT(CASE WHEN b.status = 'occupied' THEN 1 END) as occupied_beds,
-             COUNT(CASE WHEN b.status = 'vacant' THEN 1 END) as vacant_beds
+             COUNT(CASE WHEN sa.id IS NOT NULL AND sa.status = 'active' THEN 1 END) as occupied_beds,
+             COUNT(CASE WHEN sa.id IS NULL OR sa.status != 'active' THEN 1 END) as vacant_beds
       FROM beds b
       JOIN rooms r ON b.room_id = r.id
       JOIN hostels h ON r.hostel_id = h.id
+      LEFT JOIN student_allocations sa ON b.id = sa.bed_id AND sa.status = 'active'
     `;
     const bedStatsParams: any[] = [];
     if (!isSuperAdmin) {
@@ -130,7 +131,7 @@ export async function getDashboardStats(req: AuthRequest, res: Response): Promis
     let hostelsListQuery = `
       SELECT h.id, h.name, h.code, h.category, h.campus, h.total_capacity,
              COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id), 0) as total_beds,
-             COALESCE((SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id AND b.status = 'occupied'), 0) as occupied_beds
+             COALESCE((SELECT COUNT(*) FROM student_allocations sa WHERE sa.hostel_id = h.id AND sa.status = 'active'), 0) as occupied_beds
       FROM hostels h
     `;
     const hostelsListParams: any[] = [];

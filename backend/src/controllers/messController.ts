@@ -26,6 +26,20 @@ export async function getMessMenu(req: AuthRequest, res: Response): Promise<void
       }
     }
 
+    const sessions = await executeQuery(
+      'SELECT id, name, code, start_time, end_time FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC'
+    );
+
+    const hostelInfo = await executeQuery('SELECT name, code, category FROM hostels WHERE id = $1', [hostelId]);
+    const isGirls = hostelInfo.rows.length > 0
+      ? hostelInfo.rows[0].category === 'girls' || hostelInfo.rows[0].name.toLowerCase().includes('girl')
+      : String(hostelId).toLowerCase().includes('gh') || String(hostelId).toLowerCase().includes('girl');
+
+    const getDefaultItemsForSession = () => {
+      // 100% Dynamic: Do not populate fake hardcoded dishes if admin hasn't scheduled yet
+      return '';
+    };
+
     let sql = `
       SELECT mm.*, ms.name as session_name, ms.code as session_code, ms.start_time, ms.end_time
       FROM mess_menus mm
@@ -41,63 +55,47 @@ export async function getMessMenu(req: AuthRequest, res: Response): Promise<void
 
     sql += ' ORDER BY ms.start_time ASC';
 
-    const menus = await executeQuery(sql, params);
-    if (menus.rows.length > 0) {
-      res.json({ success: true, data: menus.rows });
-      return;
+    const customMenus = await executeQuery(sql, params);
+    const customMap = new Map<string, any>();
+    for (const row of customMenus.rows) {
+      customMap.set(`${row.meal_session_id}_${row.day_of_week}`, row);
     }
 
-    // Default dynamic fallback if no custom rows configured yet:
-    const hostelInfo = await executeQuery('SELECT name, code, category FROM hostels WHERE id = $1', [hostelId]);
-    const isGirls = hostelInfo.rows.length > 0
-      ? hostelInfo.rows[0].category === 'girls' || hostelInfo.rows[0].name.toLowerCase().includes('girl')
-      : String(hostelId).toLowerCase().includes('gh') || String(hostelId).toLowerCase().includes('girl');
+    const days = dayOfWeek
+      ? [String(dayOfWeek)]
+      : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    const sessions = await executeQuery('SELECT * FROM meal_sessions WHERE is_active = true ORDER BY start_time ASC');
-    const day = (dayOfWeek as string) || 'Monday';
-
-    const defaultMenus = sessions.rows.map((s) => {
-      let items = '';
-      if (s.code === 'breakfast') {
-        items = isGirls
-          ? 'Masala Dosa, Upma, Coconut Chutney, Sambar, Tea / Coffee'
-          : 'Idli, Medu Vada, Peanut Chutney, Sambar, Tea / Coffee';
-      } else if (s.code === 'lunch') {
-        items = isGirls
-          ? 'Steamed Rice, Palak Pappu, Mixed Veg Kurma, Majjiga Pulusu, Fresh Curd'
-          : 'Steamed Rice, Andhra Tomato Pappu, Aloo Fry, Sambar, Fresh Curd, Papad';
-      } else if (s.code === 'snacks') {
-        items = isGirls
-          ? 'Green Tea / Fresh Milk, Osmania Biscuits (Optional Counter)'
-          : 'Evening Tea / Coffee, Salted Biscuits';
-      } else {
-        items = isGirls
-          ? 'Phulka Roti, Paneer Butter Masala, Veg Biryani, Rasam, Curd'
-          : 'Phulka Chapati, Chana Masala, Jeera Rice, Rasam, Fresh Curd';
+    const finalMenus: any[] = [];
+    for (const d of days) {
+      for (const s of sessions.rows) {
+        const key = `${s.id}_${d}`;
+        if (customMap.has(key)) {
+          finalMenus.push(customMap.get(key));
+        } else {
+          finalMenus.push({
+            id: `def-${s.id}-${hostelId}-${d}`,
+            hostel_id: hostelId,
+            day_of_week: d,
+            meal_session_id: s.id,
+            session_name: s.name,
+            session_code: s.code,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            menu_items: getDefaultItemsForSession(),
+            is_special: false
+          });
+        }
       }
+    }
 
-      return {
-        id: `def-${s.id}-${hostelId}-${day}`,
-        hostel_id: hostelId,
-        day_of_week: day,
-        meal_session_id: s.id,
-        session_name: s.name,
-        session_code: s.code,
-        start_time: s.start_time,
-        end_time: s.end_time,
-        menu_items: items,
-        is_special: false
-      };
-    });
-
-    res.json({ success: true, data: defaultMenus });
+    res.json({ success: true, data: finalMenus });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
 
 export async function updateMessMenu(req: AuthRequest, res: Response): Promise<void> {
-  const { hostelId, dayOfWeek, mealSessionId, menuItems, isSpecial } = req.body;
+  const { hostelId, dayOfWeek, mealSessionId, menuItems, isSpecial, startTime, endTime } = req.body;
 
   if (!hostelId || !dayOfWeek || !mealSessionId || !menuItems) {
     res.status(400).json({ success: false, error: 'Hostel, day, session, and menu items are required' });
@@ -116,6 +114,14 @@ export async function updateMessMenu(req: AuthRequest, res: Response): Promise<v
         res.status(403).json({ success: false, error: 'Access denied: Cannot update mess menu of a hostel outside your assigned wing' });
         return;
       }
+    }
+
+    // Dynamic timing update: If admin specifies custom start and end times for this session
+    if (startTime && endTime) {
+      await executeQuery(
+        `UPDATE meal_sessions SET start_time = $1, end_time = $2 WHERE id = $3`,
+        [startTime.trim(), endTime.trim(), mealSessionId]
+      );
     }
 
     const existing = await executeQuery(
@@ -137,9 +143,71 @@ export async function updateMessMenu(req: AuthRequest, res: Response): Promise<v
       );
     }
 
-    await logAudit(req.user?.id, 'UPDATE_MESS_MENU', 'mess_menu', undefined, { hostelId, dayOfWeek, mealSessionId }, req);
+    await logAudit(req.user?.id, 'UPDATE_MESS_MENU', 'mess_menu', undefined, { hostelId, dayOfWeek, mealSessionId, startTime, endTime }, req);
 
-    res.json({ success: true, message: 'Mess menu updated successfully' });
+    res.json({ success: true, message: 'Mess menu and dynamic serving hours updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function updateMealSession(req: AuthRequest, res: Response): Promise<void> {
+  const { id } = req.params;
+  const { startTime, endTime, name, graceMinutes } = req.body;
+
+  if (!startTime || !endTime) {
+    res.status(400).json({ success: false, error: 'Start time and end time are required' });
+    return;
+  }
+
+  try {
+    const existing = await executeQuery('SELECT id FROM meal_sessions WHERE id = $1', [id]);
+    if (existing.rowCount === 0) {
+      res.status(404).json({ success: false, error: 'Meal session not found' });
+      return;
+    }
+
+    await executeQuery(
+      `UPDATE meal_sessions 
+       SET start_time = $1,
+           end_time = $2,
+           name = COALESCE($3, name),
+           grace_minutes = COALESCE($4, grace_minutes)
+       WHERE id = $5`,
+      [startTime.trim(), endTime.trim(), name || null, graceMinutes !== undefined ? Number(graceMinutes) : null, id]
+    );
+
+    await logAudit(req.user?.id, 'UPDATE_MEAL_SESSION_TIMING', 'meal_sessions', id, { startTime, endTime }, req);
+
+    res.json({ success: true, message: 'Meal session timing updated successfully' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+export async function updateAllMealSessions(req: AuthRequest, res: Response): Promise<void> {
+  const { sessions } = req.body;
+
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    res.status(400).json({ success: false, error: 'An array of sessions with start_time and end_time is required' });
+    return;
+  }
+
+  try {
+    await executeTransaction(async (query) => {
+      for (const s of sessions) {
+        if (s.id && s.start_time && s.end_time) {
+          await query(
+            `UPDATE meal_sessions SET start_time = $1, end_time = $2 WHERE id = $3`,
+            [s.start_time.trim(), s.end_time.trim(), s.id]
+          );
+        }
+      }
+    });
+
+    await logAudit(req.user?.id, 'UPDATE_ALL_MEAL_SESSIONS', 'meal_sessions', undefined, { count: sessions.length }, req);
+
+    res.json({ success: true, message: 'Dynamic meal session timings updated successfully across the university' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -58,9 +58,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         clearStoredToken();
         setUser(null);
       }
-    } catch (e) {
-      clearStoredToken();
-      setUser(null);
+    } catch (e: any) {
+      if (e?.status === 401 || e?.status === 403) {
+        clearStoredToken();
+        setUser(null);
+      } else {
+        console.warn('[Auth] Backend server restarting or unreachable, preserving session token:', e?.message);
+        try {
+          const payloadBase64 = token.split('.')[1];
+          if (payloadBase64) {
+            const decoded = JSON.parse(atob(payloadBase64));
+            setUser({
+              id: decoded.id,
+              email: decoded.email,
+              role: decoded.role,
+              fullName: decoded.fullName,
+              assignedCategory: decoded.assignedCategory || 'all'
+            } as any);
+          }
+        } catch (_) {}
+      }
     } finally {
       setLoading(false);
     }

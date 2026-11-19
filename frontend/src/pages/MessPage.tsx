@@ -69,10 +69,10 @@ export const MessPage: React.FC = () => {
 
   // Meal sessions for menu editing
   const [mealSessions, setMealSessions] = useState<any[]>([
-    { id: 'ms-breakfast', name: 'Morning Breakfast', code: 'breakfast', start_time: '07:00', end_time: '10:00' },
-    { id: 'ms-lunch', name: 'Afternoon Lunch', code: 'lunch', start_time: '12:00', end_time: '15:00' },
-    { id: 'ms-snacks', name: 'Evening Snacks', code: 'snacks', start_time: '16:30', end_time: '18:00' },
-    { id: 'ms-dinner', name: 'Night Dinner', code: 'dinner', start_time: '19:00', end_time: '22:30' }
+    { id: 'ms-breakfast', name: 'Morning Breakfast', code: 'breakfast' },
+    { id: 'ms-lunch', name: 'Afternoon Lunch', code: 'lunch' },
+    { id: 'ms-snacks', name: 'Evening Snacks', code: 'snacks' },
+    { id: 'ms-dinner', name: 'Night Dinner', code: 'dinner' }
   ]);
 
   // Menu Add / Edit Modal state
@@ -81,10 +81,24 @@ export const MessPage: React.FC = () => {
     hostelId: '',
     dayOfWeek: 'Monday',
     mealSessionId: 'ms-breakfast',
+    startTime: '07:00',
+    endTime: '10:00',
     menuItems: '',
     isSpecial: false
   });
   const [savingMenu, setSavingMenu] = useState(false);
+
+  // Dedicated Meal Timings Configuration Modal state
+  const [showTimingsModal, setShowTimingsModal] = useState(false);
+  const [editingTimings, setEditingTimings] = useState<any[]>([]);
+  const [savingTimings, setSavingTimings] = useState(false);
+
+  const getSessionTiming = (codeOrId: string, fallback: string) => {
+    const s = mealSessions.find(
+      (sess) => sess.code === codeOrId || sess.id === codeOrId || sess.id?.toLowerCase().includes(codeOrId)
+    );
+    return s ? `${s.start_time} - ${s.end_time}` : fallback;
+  };
 
   // Wastage Log state
   const [wastageData, setWastageData] = useState({
@@ -357,23 +371,65 @@ export const MessPage: React.FC = () => {
 
   const handleOpenAddMenu = (existingMenu?: MessMenu) => {
     if (existingMenu) {
+      const sess = mealSessions.find((s) => s.id === existingMenu.meal_session_id);
       setMenuForm({
         hostelId: selectedHostel,
         dayOfWeek: selectedDay,
         mealSessionId: existingMenu.meal_session_id,
+        startTime: existingMenu.start_time || sess?.start_time || '07:00',
+        endTime: existingMenu.end_time || sess?.end_time || '10:00',
         menuItems: existingMenu.menu_items || '',
         isSpecial: existingMenu.is_special || false
       });
     } else {
+      const firstSess = mealSessions[0];
       setMenuForm({
         hostelId: selectedHostel,
         dayOfWeek: selectedDay,
-        mealSessionId: mealSessions[0]?.id || 'ms-breakfast',
+        mealSessionId: firstSess?.id || 'ms-breakfast',
+        startTime: firstSess?.start_time || '07:00',
+        endTime: firstSess?.end_time || '10:00',
         menuItems: '',
         isSpecial: false
       });
     }
     setShowMenuModal(true);
+  };
+
+  const handleSessionChange = (sessionId: string) => {
+    const matched = mealSessions.find((s) => s.id === sessionId);
+    setMenuForm((prev) => ({
+      ...prev,
+      mealSessionId: sessionId,
+      startTime: matched?.start_time || prev.startTime,
+      endTime: matched?.end_time || prev.endTime
+    }));
+  };
+
+  const handleOpenTimingsModal = () => {
+    setEditingTimings(mealSessions.map((s) => ({ ...s })));
+    setShowTimingsModal(true);
+  };
+
+  const handleSaveAllTimings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingTimings(true);
+    try {
+      const res = await apiRequest<{ success: boolean; message: string }>('/mess/sessions', {
+        method: 'PUT',
+        body: { sessions: editingTimings }
+      });
+      if (res.success) {
+        await showSuccess(res.message || 'Meal timings updated successfully', 'Timings Saved');
+        setShowTimingsModal(false);
+        fetchMealSessions();
+        fetchMenus();
+      }
+    } catch (err: any) {
+      await showError('Failed to save timings: ' + err.message);
+    } finally {
+      setSavingTimings(false);
+    }
   };
 
   const handleSaveMenu = async (e: React.FormEvent) => {
@@ -396,6 +452,8 @@ export const MessPage: React.FC = () => {
           hostelId: targetHostel,
           dayOfWeek: menuForm.dayOfWeek,
           mealSessionId: menuForm.mealSessionId,
+          startTime: menuForm.startTime,
+          endTime: menuForm.endTime,
           menuItems: menuForm.menuItems.trim(),
           isSpecial: menuForm.isSpecial
         }
@@ -405,6 +463,7 @@ export const MessPage: React.FC = () => {
         await showSuccess(res.message || 'Menu updated successfully', 'Menu Saved');
         setShowMenuModal(false);
         fetchMenus();
+        fetchMealSessions();
       }
     } catch (err: any) {
       await showError('Failed to save menu: ' + err.message);
@@ -550,7 +609,7 @@ export const MessPage: React.FC = () => {
                 size="xs"
                 variant={
                   selectedDate ===
-                  new Date(Date.now() + 86400000).toISOString().split('T')[0]
+                    new Date(Date.now() + 86400000).toISOString().split('T')[0]
                     ? 'primary'
                     : 'ghost'
                 }
@@ -576,11 +635,10 @@ export const MessPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {/* Breakfast */}
             <div
-              className={`p-4 rounded-xl border transition-all ${
-                studentMyMeal.breakfast
+              className={`p-4 rounded-xl border transition-all ${studentMyMeal.breakfast
                   ? 'bg-emerald-50/70 border-emerald-300 ring-1 ring-emerald-200'
                   : 'bg-slate-50 border-slate-200 opacity-80'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -591,7 +649,7 @@ export const MessPage: React.FC = () => {
                   {studentMyMeal.breakfast ? '✓ Attending' : '✕ Skipped'}
                 </Badge>
               </div>
-              <div className="text-[11px] text-slate-500 mt-1 font-mono">07:00 - 10:00</div>
+              <div className="text-[11px] text-slate-500 mt-1 font-mono">{getSessionTiming('breakfast', '07:00 - 10:00')}</div>
               <p className="text-[11px] text-slate-600 mt-2 min-h-[32px]">
                 {studentMyMeal.breakfast
                   ? 'Counted for breakfast preparation.'
@@ -612,11 +670,10 @@ export const MessPage: React.FC = () => {
 
             {/* Lunch */}
             <div
-              className={`p-4 rounded-xl border transition-all ${
-                studentMyMeal.lunch
+              className={`p-4 rounded-xl border transition-all ${studentMyMeal.lunch
                   ? 'bg-emerald-50/70 border-emerald-300 ring-1 ring-emerald-200'
                   : 'bg-slate-50 border-slate-200 opacity-80'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -627,7 +684,7 @@ export const MessPage: React.FC = () => {
                   {studentMyMeal.lunch ? '✓ Attending' : '✕ Skipped'}
                 </Badge>
               </div>
-              <div className="text-[11px] text-slate-500 mt-1 font-mono">12:00 - 15:00</div>
+              <div className="text-[11px] text-slate-500 mt-1 font-mono">{getSessionTiming('lunch', '12:00 - 15:00')}</div>
               <p className="text-[11px] text-slate-600 mt-2 min-h-[32px]">
                 {studentMyMeal.lunch
                   ? 'Counted for lunch preparation.'
@@ -648,11 +705,10 @@ export const MessPage: React.FC = () => {
 
             {/* Snacks */}
             <div
-              className={`p-4 rounded-xl border transition-all ${
-                studentMyMeal.snacks
+              className={`p-4 rounded-xl border transition-all ${studentMyMeal.snacks
                   ? 'bg-emerald-50/70 border-emerald-300 ring-1 ring-emerald-200'
                   : 'bg-slate-50 border-slate-200 opacity-80'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -663,7 +719,7 @@ export const MessPage: React.FC = () => {
                   {studentMyMeal.snacks ? '✓ Attending' : '✕ Skipped'}
                 </Badge>
               </div>
-              <div className="text-[11px] text-slate-500 mt-1 font-mono">16:30 - 18:00</div>
+              <div className="text-[11px] text-slate-500 mt-1 font-mono">{getSessionTiming('snacks', '16:30 - 18:00')}</div>
               <p className="text-[11px] text-slate-600 mt-2 min-h-[32px]">
                 {studentMyMeal.snacks
                   ? 'Counted for evening snacks.'
@@ -684,11 +740,10 @@ export const MessPage: React.FC = () => {
 
             {/* Dinner */}
             <div
-              className={`p-4 rounded-xl border transition-all ${
-                studentMyMeal.dinner
+              className={`p-4 rounded-xl border transition-all ${studentMyMeal.dinner
                   ? 'bg-emerald-50/70 border-emerald-300 ring-1 ring-emerald-200'
                   : 'bg-slate-50 border-slate-200 opacity-80'
-              }`}
+                }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -699,7 +754,7 @@ export const MessPage: React.FC = () => {
                   {studentMyMeal.dinner ? '✓ Attending' : '✕ Skipped'}
                 </Badge>
               </div>
-              <div className="text-[11px] text-slate-500 mt-1 font-mono">19:00 - 22:30</div>
+              <div className="text-[11px] text-slate-500 mt-1 font-mono">{getSessionTiming('dinner', '19:00 - 22:30')}</div>
               <p className="text-[11px] text-slate-600 mt-2 min-h-[32px]">
                 {studentMyMeal.dinner
                   ? 'Counted for dinner preparation.'
@@ -741,7 +796,7 @@ export const MessPage: React.FC = () => {
                   size="xs"
                   variant={
                     selectedDate ===
-                    new Date(Date.now() + 86400000).toISOString().split('T')[0]
+                      new Date(Date.now() + 86400000).toISOString().split('T')[0]
                       ? 'primary'
                       : 'ghost'
                   }
@@ -817,7 +872,7 @@ export const MessPage: React.FC = () => {
                     <Sun className="w-4 h-4 text-amber-600" />
                     <span>Breakfast Preparation</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold">07:00 - 10:00</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">{getSessionTiming('breakfast', '07:00 - 10:00')}</span>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between">
                   <div>
@@ -845,7 +900,7 @@ export const MessPage: React.FC = () => {
                     <UtensilsCrossed className="w-4 h-4 text-emerald-600" />
                     <span>Lunch Preparation</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold">12:00 - 15:00</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">{getSessionTiming('lunch', '12:00 - 15:00')}</span>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between">
                   <div>
@@ -873,7 +928,7 @@ export const MessPage: React.FC = () => {
                     <Coffee className="w-4 h-4 text-blue-600" />
                     <span>Snacks & Tea Count</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold">16:30 - 18:00</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">{getSessionTiming('snacks', '16:30 - 18:00')}</span>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between">
                   <div>
@@ -901,7 +956,7 @@ export const MessPage: React.FC = () => {
                     <Moon className="w-4 h-4 text-indigo-600" />
                     <span>Dinner Preparation</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 font-bold">19:00 - 22:30</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">{getSessionTiming('dinner', '19:00 - 22:30')}</span>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between">
                   <div>
@@ -991,11 +1046,10 @@ export const MessPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleStaffToggleStudentMeal(st.studentId, 'breakfast', st.breakfast)}
-                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${
-                              st.breakfast
+                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${st.breakfast
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                                 : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                            }`}
+                              }`}
                             title="Click to toggle breakfast attendance"
                           >
                             {st.breakfast ? '✓ Yes' : '✕ Skip'}
@@ -1007,11 +1061,10 @@ export const MessPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleStaffToggleStudentMeal(st.studentId, 'lunch', st.lunch)}
-                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${
-                              st.lunch
+                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${st.lunch
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                                 : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                            }`}
+                              }`}
                             title="Click to toggle lunch attendance"
                           >
                             {st.lunch ? '✓ Yes' : '✕ Skip'}
@@ -1023,11 +1076,10 @@ export const MessPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleStaffToggleStudentMeal(st.studentId, 'snacks', st.snacks)}
-                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${
-                              st.snacks
+                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${st.snacks
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                                 : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                            }`}
+                              }`}
                             title="Click to toggle snacks attendance"
                           >
                             {st.snacks ? '✓ Yes' : '✕ Skip'}
@@ -1039,11 +1091,10 @@ export const MessPage: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => handleStaffToggleStudentMeal(st.studentId, 'dinner', st.dinner)}
-                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${
-                              st.dinner
+                            className={`px-2 py-1 rounded text-[11px] font-extrabold cursor-pointer border transition shadow-2xs ${st.dinner
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                                 : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
-                            }`}
+                              }`}
                             title="Click to toggle dinner attendance"
                           >
                             {st.dinner ? '✓ Yes' : '✕ Skip'}
@@ -1052,15 +1103,14 @@ export const MessPage: React.FC = () => {
 
                         <TableCell align="right">
                           <span
-                            className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded ${
-                              st.source === 'STUDENT_APP'
+                            className={`text-[9px] uppercase font-mono font-bold px-1.5 py-0.5 rounded ${st.source === 'STUDENT_APP'
                                 ? 'bg-blue-100 text-blue-800'
                                 : st.source === 'WARDEN_OVERRIDE'
-                                ? 'bg-purple-100 text-purple-800'
-                                : st.source === 'LEAVE_SYNC'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
+                                  ? 'bg-purple-100 text-purple-800'
+                                  : st.source === 'LEAVE_SYNC'
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-slate-100 text-slate-600'
+                              }`}
                           >
                             {st.source}
                           </span>
@@ -1108,7 +1158,7 @@ export const MessPage: React.FC = () => {
                   <td className="p-2.5 flex items-center gap-1.5 font-bold">
                     <Sun className="w-3.5 h-3.5 text-amber-500" /> Morning Breakfast
                   </td>
-                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">07:00 - 10:00</td>
+                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">{getSessionTiming('breakfast', '07:00 - 10:00')}</td>
                   <td className="p-2.5 text-right font-black text-base text-slate-900">
                     {attendanceCounts?.counts?.breakfast?.attending ?? 0} plates
                   </td>
@@ -1117,7 +1167,7 @@ export const MessPage: React.FC = () => {
                   <td className="p-2.5 flex items-center gap-1.5 font-bold">
                     <UtensilsCrossed className="w-3.5 h-3.5 text-orange-500" /> Afternoon Lunch
                   </td>
-                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">12:00 - 15:00</td>
+                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">{getSessionTiming('lunch', '12:00 - 15:00')}</td>
                   <td className="p-2.5 text-right font-black text-base text-slate-900">
                     {attendanceCounts?.counts?.lunch?.attending ?? 0} plates
                   </td>
@@ -1126,7 +1176,7 @@ export const MessPage: React.FC = () => {
                   <td className="p-2.5 flex items-center gap-1.5 font-bold">
                     <Coffee className="w-3.5 h-3.5 text-amber-700" /> Evening Snacks & Tea
                   </td>
-                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">16:30 - 18:00</td>
+                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">{getSessionTiming('snacks', '16:30 - 18:00')}</td>
                   <td className="p-2.5 text-right font-black text-base text-slate-900">
                     {attendanceCounts?.counts?.snacks?.attending ?? 0} servings
                   </td>
@@ -1135,7 +1185,7 @@ export const MessPage: React.FC = () => {
                   <td className="p-2.5 flex items-center gap-1.5 font-bold">
                     <Moon className="w-3.5 h-3.5 text-indigo-500" /> Night Dinner
                   </td>
-                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">19:00 - 22:30</td>
+                  <td className="p-2.5 text-center text-slate-500 font-mono text-[11px]">{getSessionTiming('dinner', '19:00 - 22:30')}</td>
                   <td className="p-2.5 text-right font-black text-base text-slate-900">
                     {attendanceCounts?.counts?.dinner?.attending ?? 0} plates
                   </td>
@@ -1178,16 +1228,27 @@ export const MessPage: React.FC = () => {
               ))}
             </div>
 
-            {/* Admin / Warden Add Food Menu Button */}
+            {/* Admin / Warden Add Food Menu & Serving Hours Buttons */}
             {!isStudent && isMessAdmin && (
-              <Button
-                size="sm"
-                variant="primary"
-                leftIcon={<Plus className="w-3.5 h-3.5" />}
-                onClick={() => handleOpenAddMenu()}
-              >
-                Add / Update Food Menu
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<Clock className="w-3.5 h-3.5 text-amber-600" />}
+                  onClick={handleOpenTimingsModal}
+                  title="Configure official dining session serving hours"
+                >
+                  Configure Serving Hours
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  onClick={() => handleOpenAddMenu()}
+                >
+                  Add / Update Food Menu
+                </Button>
+              </div>
             )}
           </div>
 
@@ -1215,7 +1276,7 @@ export const MessPage: React.FC = () => {
 
                   <div className="mt-3">
                     <p className="text-xs text-slate-700 leading-relaxed font-medium bg-slate-50 p-3 rounded-md border border-slate-100 min-h-[90px] whitespace-pre-line">
-                      {m.menu_items}
+                      {m.menu_items?.trim() || 'No menu published yet for this session. Click "Edit Menu" to add dishes.'}
                     </p>
                   </div>
                 </div>
@@ -1330,12 +1391,7 @@ export const MessPage: React.FC = () => {
               label="Meal Session"
               value={wastageData.mealSessionId}
               onChange={(e) => setWastageData({ ...wastageData, mealSessionId: e.target.value })}
-              options={[
-                { value: 'ms-breakfast', label: 'Morning Breakfast' },
-                { value: 'ms-lunch', label: 'Afternoon Lunch' },
-                { value: 'ms-snacks', label: 'Evening Snacks' },
-                { value: 'ms-dinner', label: 'Night Dinner' }
-              ]}
+              options={mealSessions.map((s) => ({ value: s.id, label: s.name }))}
             />
 
             <Input
@@ -1405,12 +1461,43 @@ export const MessPage: React.FC = () => {
             <label className="block text-xs font-bold text-slate-700 mb-1">Meal Session</label>
             <Select
               value={menuForm.mealSessionId}
-              onChange={(e) => setMenuForm({ ...menuForm, mealSessionId: e.target.value })}
+              onChange={(e) => handleSessionChange(e.target.value)}
               options={mealSessions.map((s) => ({
                 value: s.id,
-                label: `${s.name} (${s.start_time} - ${s.end_time})`
+                label: s.name
               }))}
             />
+          </div>
+
+          {/* Dynamic Serving Hours for Selected Session */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-amber-50/50 p-3 rounded-lg border border-amber-200/70">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                Serving Start Time <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                type="time"
+                value={menuForm.startTime}
+                onChange={(e) => setMenuForm({ ...menuForm, startTime: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                Serving End Time <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                type="time"
+                value={menuForm.endTime}
+                onChange={(e) => setMenuForm({ ...menuForm, endTime: e.target.value })}
+                required
+              />
+            </div>
+            <div className="sm:col-span-2 text-[11px] text-slate-500">
+              💡 <strong>Dynamic Serving Hours:</strong> Updating times here syncs this session's active serving window across student apps and scanner check-ins immediately.
+            </div>
           </div>
 
           <div>
@@ -1449,6 +1536,77 @@ export const MessPage: React.FC = () => {
               disabled={savingMenu}
             >
               {savingMenu ? 'Saving...' : 'Save & Publish Menu'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: CONFIGURE SERVING HOURS */}
+      <Modal
+        isOpen={showTimingsModal}
+        onClose={() => setShowTimingsModal(false)}
+        title="Configure Mess Serving Hours"
+        size="md"
+        icon={<Clock className="w-5 h-5 text-amber-600" />}
+      >
+        <form onSubmit={handleSaveAllTimings} className="space-y-4">
+          <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-md text-xs text-blue-900 leading-relaxed">
+            Configure dynamic serving hours for all dining sessions. These timings control active scan windows at dining hall counters and appear on student mobile apps.
+          </div>
+
+          <div className="space-y-3">
+            {editingTimings.map((session, idx) => (
+              <div key={session.id || idx} className="p-3 rounded-lg border border-slate-200 bg-slate-50/60">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-800">{session.name}</span>
+                  <Badge variant="neutral">{session.code}</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Start Time</label>
+                    <Input
+                      type="time"
+                      value={session.start_time || ''}
+                      onChange={(e) => {
+                        const updated = [...editingTimings];
+                        updated[idx].start_time = e.target.value;
+                        setEditingTimings(updated);
+                      }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">End Time</label>
+                    <Input
+                      type="time"
+                      value={session.end_time || ''}
+                      onChange={(e) => {
+                        const updated = [...editingTimings];
+                        updated[idx].end_time = e.target.value;
+                        setEditingTimings(updated);
+                      }}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowTimingsModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={savingTimings}
+            >
+              {savingTimings ? 'Saving...' : 'Save All Serving Hours'}
             </Button>
           </div>
         </form>

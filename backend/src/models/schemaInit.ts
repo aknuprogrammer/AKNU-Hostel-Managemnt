@@ -15,7 +15,7 @@ export async function initializeSchema() {
   const db = await getDb();
   if (db.type === 'pglite') {
     // PGlite can execute full multi-statement scripts directly
-    await db.client.exec(cleanedSql);
+    await db.client!.exec(cleanedSql);
   } else {
     // For pg Pool
     const statements = cleanedSql
@@ -69,6 +69,21 @@ export async function initializeSchema() {
     `);
     await executeQuery('CREATE INDEX IF NOT EXISTS idx_meal_attendance_date_hostel ON student_meal_attendance(service_date, hostel_id)');
     await executeQuery('CREATE INDEX IF NOT EXISTS idx_meal_attendance_student_date ON student_meal_attendance(student_id, service_date)');
+
+    // Reconcile and heal any orphaned bed status or room occupancy
+    await executeQuery(`
+      UPDATE beds
+      SET status = 'vacant'
+      WHERE id NOT IN (
+        SELECT bed_id FROM student_allocations WHERE status = 'active' AND bed_id IS NOT NULL
+      ) AND status = 'occupied'
+    `);
+    await executeQuery(`
+      UPDATE rooms r
+      SET current_occupancy = (
+        SELECT COUNT(*) FROM student_allocations sa WHERE sa.room_id = r.id AND sa.status = 'active'
+      )
+    `);
   } catch (e) {
     // Ignore if column already exists
   }

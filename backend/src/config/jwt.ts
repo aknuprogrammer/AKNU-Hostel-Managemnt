@@ -19,4 +19,4 @@ export function generateToken(payload: TokenUser): string {
 
 export function verifyToken(token: string): TokenUser {
   return jwt.verify(token, JWT_SECRET) as TokenUser;
-}
+} 

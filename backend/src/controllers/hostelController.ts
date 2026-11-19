@@ -26,7 +26,7 @@ export async function getHostels(req: AuthRequest, res: Response): Promise<void>
       SELECT h.*, u.full_name as chief_warden_name,
              (SELECT COUNT(*) FROM rooms r WHERE r.hostel_id = h.id) as total_rooms,
              (SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id) as total_beds,
-             (SELECT COUNT(*) FROM beds b JOIN rooms r ON b.room_id = r.id WHERE r.hostel_id = h.id AND b.status = 'occupied') as occupied_beds
+             (SELECT COUNT(*) FROM student_allocations sa JOIN students s ON sa.student_id = s.id WHERE sa.hostel_id = h.id AND sa.status = 'active') as occupied_beds
       FROM hostels h
       LEFT JOIN users u ON h.chief_warden_id = u.id
       ${whereClause}
@@ -93,7 +93,8 @@ export async function getRoomsWithBeds(req: AuthRequest, res: Response): Promise
       SELECT r.id as room_id, r.room_number, r.capacity, r.current_occupancy, r.room_type, r.status as room_status,
              r.floor_id, f.id as floor_table_id, f.floor_number, f.name as floor_name,
              h.id as hostel_id, h.name as hostel_name,
-             b.id as bed_id, b.bed_number, b.status as bed_status,
+             b.id as bed_id, b.bed_number,
+             CASE WHEN sa.id IS NOT NULL AND sa.status = 'active' AND s.id IS NOT NULL THEN 'occupied' ELSE 'vacant' END as bed_status,
              s.id as student_id, s.full_name as student_name, s.roll_number
       FROM rooms r
       JOIN hostels h ON r.hostel_id = h.id
@@ -401,15 +402,25 @@ export async function deleteHostel(req: AuthRequest, res: Response): Promise<voi
     }
 
     const checkRes = await executeQuery(
-      'SELECT id FROM student_allocations WHERE hostel_id = $1 AND status = \'active\'',
+      `SELECT sa.id, s.roll_number, s.full_name
+       FROM student_allocations sa
+       JOIN students s ON sa.student_id = s.id
+       WHERE sa.hostel_id = $1 AND sa.status = 'active'`,
       [id]
     );
     if (checkRes.rows.length > 0) {
-      res.status(400).json({ success: false, error: 'Cannot delete hostel: active students are currently allocated to it.' });
+      const names = checkRes.rows.map((r: any) => `${r.full_name} (${r.roll_number})`).slice(0, 3).join(', ');
+      res.status(400).json({
+        success: false,
+        error: `Cannot delete hostel: ${checkRes.rows.length} active resident(s) currently allocated (${names}${checkRes.rows.length > 3 ? '...' : ''}). Please vacate them first.`
+      });
       return;
     }
 
     await executeTransaction(async (query) => {
+      await query('DELETE FROM student_allocations WHERE hostel_id = $1', [id]);
+      await query('DELETE FROM student_meal_attendance WHERE hostel_id = $1', [id]);
+      await query('DELETE FROM complaints WHERE hostel_id = $1', [id]);
       await query('DELETE FROM mess_menus WHERE hostel_id = $1', [id]);
       await query('DELETE FROM mess_inventory_transactions WHERE inventory_item_id IN (SELECT id FROM mess_inventory WHERE hostel_id = $1)', [id]);
       await query('DELETE FROM mess_inventory WHERE hostel_id = $1', [id]);
@@ -856,41 +867,52 @@ export async function batchAllocateCohort(req: AuthRequest, res: Response): Prom
 }
 
 export async function batchVacateStudents(req: AuthRequest, res: Response): Promise<void> {
-  const { studentIds, reason = 'Batch checkout' } = req.body;
+  const { studentIds, bedIds, reason = 'Checkout' } = req.body;
 
-  if (!Array.isArray(studentIds) || studentIds.length === 0) {
-    res.status(400).json({ success: false, error: 'Student IDs array is required' });
+  if ((!Array.isArray(studentIds) || studentIds.length === 0) && (!Array.isArray(bedIds) || bedIds.length === 0)) {
+    res.status(400).json({ success: false, error: 'Student IDs or Bed IDs array is required' });
     return;
   }
 
   try {
     let vacatedCount = 0;
     await executeTransaction(async (query) => {
-      const placeholders = studentIds.map((_, i) => `$${i + 1}`).join(',');
-      const allocs = await query(
-        `SELECT sa.id, sa.student_id, sa.room_id, sa.bed_id, sa.hostel_id
-         FROM student_allocations sa
-         WHERE sa.student_id IN (${placeholders}) AND sa.status = 'active'`,
-        studentIds
-      );
-
-      for (const a of allocs.rows) {
-        await query(
-          `UPDATE student_allocations SET status = 'checked_out', check_out_date = CURRENT_DATE WHERE id = $1`,
-          [a.id]
+      if (Array.isArray(studentIds) && studentIds.length > 0) {
+        const placeholders = studentIds.map((_, i) => `$${i + 1}`).join(',');
+        const allocs = await query(
+          `SELECT sa.id, sa.student_id, sa.room_id, sa.bed_id, sa.hostel_id
+           FROM student_allocations sa
+           WHERE sa.student_id IN (${placeholders}) AND sa.status = 'active'`,
+          studentIds
         );
-        await query(`UPDATE beds SET status = 'vacant' WHERE id = $1`, [a.bed_id]);
-        await query(`UPDATE rooms SET current_occupancy = GREATEST(0, current_occupancy - 1) WHERE id = $1`, [a.room_id]);
-        vacatedCount++;
+
+        for (const a of allocs.rows) {
+          await query(
+            `UPDATE student_allocations SET status = 'checked_out', check_out_date = CURRENT_DATE WHERE id = $1`,
+            [a.id]
+          );
+          await query(`UPDATE beds SET status = 'vacant' WHERE id = $1`, [a.bed_id]);
+          await query(`UPDATE rooms SET current_occupancy = GREATEST(0, (SELECT COUNT(*) FROM student_allocations WHERE room_id = $1 AND status = 'active')) WHERE id = $1`, [a.room_id]);
+          vacatedCount++;
+        }
+      }
+
+      if (Array.isArray(bedIds) && bedIds.length > 0) {
+        for (const bId of bedIds) {
+          await query(
+            `UPDATE student_allocations SET status = 'checked_out', check_out_date = CURRENT_DATE WHERE bed_id = $1 AND status = 'active'`,
+            [bId]
+          );
+          await query(`UPDATE beds SET status = 'vacant' WHERE id = $1`, [bId]);
+          await query(`UPDATE rooms SET current_occupancy = GREATEST(0, (SELECT COUNT(*) FROM student_allocations WHERE room_id = rooms.id AND status = 'active')) WHERE id IN (SELECT room_id FROM beds WHERE id = $1)`, [bId]);
+          vacatedCount++;
+        }
       }
     });
 
     await logAudit(req.user?.id, 'BATCH_VACATE_STUDENTS', 'student_allocation', undefined, { vacatedCount, reason }, req);
 
-    res.json({
-      success: true,
-      message: `Successfully vacated ${vacatedCount} student allocations.`
-    });
+    res.json({ success: true, message: `Successfully vacated ${vacatedCount} bed allocation(s).` });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -933,7 +955,7 @@ export async function deleteBed(req: AuthRequest, res: Response): Promise<void> 
       [bedId]
     );
 
-    if (allocRes.rows.length > 0 || bed.status === 'occupied') {
+    if (allocRes.rows.length > 0) {
       const studentName = allocRes.rows[0]?.full_name || 'a resident';
       res.status(400).json({
         success: false,
@@ -943,6 +965,9 @@ export async function deleteBed(req: AuthRequest, res: Response): Promise<void> 
     }
 
     await executeTransaction(async (query) => {
+      // 0. Clean up any inactive/historical allocations tied to this bed
+      await query('DELETE FROM student_allocations WHERE bed_id = $1', [bedId]);
+
       // 1. Delete the bed
       await query('DELETE FROM beds WHERE id = $1', [bedId]);
 
@@ -950,7 +975,7 @@ export async function deleteBed(req: AuthRequest, res: Response): Promise<void> 
       await query(
         `UPDATE rooms 
          SET capacity = (SELECT COUNT(*) FROM beds WHERE room_id = $1),
-             current_occupancy = (SELECT COUNT(*) FROM beds WHERE room_id = $1 AND status = 'occupied')
+             current_occupancy = (SELECT COUNT(*) FROM student_allocations WHERE room_id = $1 AND status = 'active')
          WHERE id = $1`,
         [bed.room_id]
       );

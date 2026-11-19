@@ -20,7 +20,7 @@ import { AccountsPage } from './pages/AccountsPage.js';
 import { SecurityPage } from './pages/SecurityPage.js';
 import { StaffRecordsPage } from './pages/StaffRecordsPage.js';
 
-import { ShieldCheck, Lock, Mail, ArrowRight, Eye, EyeOff, GraduationCap } from 'lucide-react';
+import { Lock, Mail, ArrowRight, Eye, EyeOff, GraduationCap } from 'lucide-react';
 import { Button, Input, IconButton } from './components/ui/index.js';
 
 const VALID_TABS: ActiveTab[] = [
@@ -50,7 +50,7 @@ const getTabFromUrl = (): ActiveTab => {
 };
 
 export const App: React.FC = () => {
-  const { user, loading, login, quickSwitchRole, refreshUser } = useAuth();
+  const { user, loading, login, refreshUser } = useAuth();
   const [activeTab, setActiveTabState] = useState<ActiveTab>(getTabFromUrl);
   const [showRoleSwitcher, setShowRoleSwitcher] = useState(false);
   const [showDigitalId, setShowDigitalId] = useState(false);

@@ -210,105 +210,128 @@ export async function seedDatabase() {
       INSERT INTO rooms (id, floor_id, hostel_id, room_number, room_type, capacity, current_occupancy, status)
       VALUES 
         ('room-vbh-101', 'floor-vbh-1', 'hostel-vbh', '101', 'double', 2, 0, 'active'),
-        ('room-vbh-102', 'floor-vbh-1', 'hostel-vbh', '102', 'double', 2, 1, 'active'),
+        ('room-vbh-102', 'floor-vbh-1', 'hostel-vbh', '102', 'double', 2, 0, 'active'),
         ('room-vbh-201', 'floor-vbh-2', 'hostel-vbh', '201', 'double', 2, 0, 'active')
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT (id) DO UPDATE SET current_occupancy = 0
     `);
 
-    // Beds for VBH Room 102
+    // Beds for VBH Rooms
     await executeQuery(`
       INSERT INTO beds (id, room_id, bed_number, status)
       VALUES 
-        ('bed-vbh-102-1', 'room-vbh-102', 'Bed 1', 'occupied'),
-        ('bed-vbh-102-2', 'room-vbh-102', 'Bed 2', 'vacant'),
         ('bed-vbh-101-1', 'room-vbh-101', 'Bed 1', 'vacant'),
-        ('bed-vbh-101-2', 'room-vbh-101', 'Bed 2', 'vacant')
-      ON CONFLICT (id) DO NOTHING
-    `);
-
-    // Wardens
-    await executeQuery(`
-      INSERT INTO users (id, email, password_hash, plain_password, full_name, phone, role, gender_wing, is_active)
-      VALUES 
-        ('usr-chief-warden', 'chiefwarden@aknu.edu.in', $1, 'Aknu@2026!', 'Prof. T. V. Ramana (Chief Warden)', '9848011222', 'chief_warden', 'all', true),
-        ('usr-warden-boys', 'warden@aknu.edu.in', $1, 'Aknu@2026!', 'Dr. K. Srinivas (Warden)', '9848011223', 'assistant_warden', 'boys', true)
-      ON CONFLICT (id) DO NOTHING
-    `, [passwordHash]);
-
-    await executeQuery(`
-      INSERT INTO user_hostel_assignments (id, user_id, hostel_id)
-      VALUES 
-        ('uha-cw-vbh', 'usr-chief-warden', 'hostel-vbh'),
-        ('uha-cw-gh1', 'usr-chief-warden', 'hostel-gh1'),
-        ('uha-cw-sgh', 'usr-chief-warden', 'hostel-sgh'),
-        ('uha-wb-vbh', 'usr-warden-boys', 'hostel-vbh'),
-        ('uha-wb-gh1', 'usr-warden-boys', 'hostel-gh1')
+        ('bed-vbh-101-2', 'room-vbh-101', 'Bed 2', 'vacant'),
+        ('bed-vbh-102-1', 'room-vbh-102', 'Bed 1', 'vacant'),
+        ('bed-vbh-102-2', 'room-vbh-102', 'Bed 2', 'vacant'),
+        ('bed-vbh-201-1', 'room-vbh-201', 'Bed 1', 'vacant'),
+        ('bed-vbh-201-2', 'room-vbh-201', 'Bed 2', 'vacant')
       ON CONFLICT (id) DO NOTHING
     `);
   }
 
-  // 8. Resident Student N. Rajesh (25PHDCSE01) with Face Photo & Allocation
-  const rajeshCheck = await executeQuery("SELECT id FROM students WHERE roll_number = '25PHDCSE01'");
-  if (rajeshCheck.rowCount === 0) {
-    console.log('[Seed] Seeding resident student N. Rajesh (25PHDCSE01) with registered biometric photo...');
+  // Ensure all room beds exist for VBH Room 201
+  await executeQuery(`
+    INSERT INTO beds (id, room_id, bed_number, status)
+    VALUES 
+      ('bed-vbh-201-1', 'room-vbh-201', 'Bed 1', 'vacant'),
+      ('bed-vbh-201-2', 'room-vbh-201', 'Bed 2', 'vacant')
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // Clean up any orphaned allocations where student was deleted
+  await executeQuery("DELETE FROM student_allocations WHERE student_id NOT IN (SELECT id FROM students)");
+
+  // 8. Seed Default Weekly Mess Menus for hostels if empty
+  const menuCount = await executeQuery('SELECT COUNT(*) as count FROM mess_menus');
+  if (parseInt(menuCount.rows[0].count) === 0) {
+    console.log('[Seed] Seeding standard weekly mess menus for active hostels...');
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const activeHostels = await executeQuery("SELECT id FROM hostels WHERE status = 'active'");
     
-    // Read photo if available
-    let studentPhoto = null;
-    const photoPath = path.resolve(__dirname, '../../data/extracted_rajesh_photo.txt');
-    if (fs.existsSync(photoPath)) {
-      studentPhoto = fs.readFileSync(photoPath, 'utf8').trim();
+    const weeklySchedule: Record<string, { breakfast: string; lunch: string; snacks: string; dinner: string }> = {
+      Monday: {
+        breakfast: 'Idli, Medu Vada, Peanut Chutney, Sambar, Tea / Coffee',
+        lunch: 'Steamed Rice, Tomato Dal, Potato Fry, Rasam, Curd, Papad',
+        snacks: 'Tea / Coffee, Onion Pakoda',
+        dinner: 'Chapati, Paneer Butter Masala, Steamed Rice, Sambar, Curd'
+      },
+      Tuesday: {
+        breakfast: 'Masala Dosa, Coconut Chutney, Allam Chutney, Sambar, Tea / Coffee',
+        lunch: 'Steamed Rice, Dosakaya Pappu, Bhendi Fry, Majjiga Pulusu, Curd',
+        snacks: 'Tea / Coffee, Sweet & Hot Biscuits',
+        dinner: 'Poori, Aloo Kurma, Steamed Rice, Tomato Rasam, Curd'
+      },
+      Wednesday: {
+        breakfast: 'Puri Bhaji, Onion Chutney, Tea / Coffee',
+        lunch: 'Veg Biryani, Mirchi Ka Salan, Raita, Steamed Rice, Dal Tadka',
+        snacks: 'Tea / Coffee, Veg Cutlet',
+        dinner: 'Chapati, Mix Veg Curry, Steamed Rice, Lemon Rasam, Curd'
+      },
+      Thursday: {
+        breakfast: 'Upma, Poha, Coconut Chutney, Tea / Coffee',
+        lunch: 'Steamed Rice, Palak Pappu, Aloo Gobi Roast, Sambar, Curd',
+        snacks: 'Tea / Coffee, Sweet Corn / Boiled Chana',
+        dinner: 'Paratha, Chana Masala, Steamed Rice, Pepper Rasam, Curd'
+      },
+      Friday: {
+        breakfast: 'Mysore Bonda, Chana Chutney, Sambar, Tea / Coffee',
+        lunch: 'Steamed Rice, Methi Dal, Raw Banana Fry, Rasam, Curd, Papad',
+        snacks: 'Tea / Coffee, Mirchi Bajji',
+        dinner: 'Chapati, Dal Makhani, Steamed Rice, Sambar, Gulab Jamun, Curd'
+      },
+      Saturday: {
+        breakfast: 'Uttapam, Tomato Chutney, Sambar, Tea / Coffee',
+        lunch: 'Steamed Rice, Gongura Pappu, Dondakaya Fry, Charu, Curd',
+        snacks: 'Tea / Coffee, Samosa',
+        dinner: 'Chapati, Meal Maker Curry, Steamed Rice, Rasam, Curd'
+      },
+      Sunday: {
+        breakfast: 'Rava Idli / Dosa, Bombay Chutney, Sambar, Tea / Coffee',
+        lunch: 'Special Bagara Rice, Paneer Curry, Dal Fry, Raitha, Gulab Jamun, Curd',
+        snacks: 'Tea / Coffee, Biscuits & Mixture',
+        dinner: 'Pulav, Kurma, Steamed Rice, Rasam, Curd'
+      }
+    };
+
+    const sessionRows = await executeQuery("SELECT id, code FROM meal_sessions");
+    const sessionMap: Record<string, string> = {};
+    for (const s of sessionRows.rows) {
+      sessionMap[s.code] = s.id;
     }
 
-    const studentUserId = 'usr-student-rajesh';
-    const studentId = 'stu-rajesh-phd';
-    const regNumber = 'AKNU/2026/BH1/PHD/CSE/0001';
-    const salt = generateQrSalt();
-    const qrToken = signStudentQrToken(studentId, regNumber, salt);
+    for (const h of activeHostels.rows) {
+      for (const d of days) {
+        const schedule = weeklySchedule[d];
+        const items = [
+          { code: 'breakfast', text: schedule.breakfast },
+          { code: 'lunch', text: schedule.lunch },
+          { code: 'snacks', text: schedule.snacks },
+          { code: 'dinner', text: schedule.dinner }
+        ];
 
-    // Create student User account
-    await executeQuery(`
-      INSERT INTO users (id, email, password_hash, full_name, phone, role, gender_wing, is_active, is_first_login)
-      VALUES ($1, 'nrajesh@aknu.edu.in', $2, 'N. Rajesh', '9848091122', 'student', 'boys', true, false)
-      ON CONFLICT (id) DO UPDATE SET is_active = true, is_first_login = false
-    `, [studentUserId, passwordHash]);
-
-    // Create student profile
-    await executeQuery(`
-      INSERT INTO students (
-        id, student_id_code, roll_number, reg_number, full_name, photo_url,
-        gender, department_id, course_id, program_level, academic_year_id,
-        year_of_study, current_semester, phone, email, permanent_address,
-        guardian_name, guardian_phone, hostel_status, mess_eligibility,
-        eligible_meal_sessions, qr_credential_token, qr_salt, qr_status,
-        user_id, admission_fee_status, admission_fee_total, admission_fee_paid,
-        admission_fee_payment_date, admission_fee_receipt_no, admission_fee_payment_mode
-      ) VALUES (
-        $1, 'STD-2026-PHD-001', '25PHDCSE01', $2, 'N. Rajesh', $3,
-        'male', 'dept-cse', 'crs-phd', 'PhD', 'ay-2026-27',
-        1, 1, '9848091122', 'nrajesh@aknu.edu.in', 'D.No 12-4, Danavaipeta, Rajahmundry, AP 533103',
-        'N. Subba Rao', '9848091123', 'active', true,
-        '["breakfast","lunch","snacks","dinner"]', $4, $5, 'active',
-        $6, 'paid', 25000, 25000,
-        '2026-10-20', 'UPI-2026-9921', 'upi'
-      )
-      ON CONFLICT (id) DO NOTHING
-    `, [studentId, regNumber, studentPhoto, qrToken, salt, studentUserId]);
-
-    // Create room allocation
-    await executeQuery(`
-      INSERT INTO student_allocations (
-        id, student_id, hostel_id, room_id, bed_id,
-        academic_year_id, check_in_date, status, created_by, notes
-      ) VALUES (
-        'alloc-rajesh', $1, 'hostel-vbh', 'room-vbh-102', 'bed-vbh-102-1',
-        'ay-2026-27', '2026-07-01', 'active', 'usr-admin', 'Official PhD scholar allocation'
-      )
-      ON CONFLICT (id) DO NOTHING
-    `, [studentId]);
+        for (const item of items) {
+          const sessId = sessionMap[item.code];
+          if (sessId) {
+            const menuId = `menu-${h.id}-${d.toLowerCase()}-${item.code}`;
+            await executeQuery(
+              `INSERT INTO mess_menus (id, hostel_id, day_of_week, meal_session_id, menu_items, is_special)
+               VALUES ($1, $2, $3, $4, $5, false)
+               ON CONFLICT (id) DO UPDATE SET menu_items = EXCLUDED.menu_items`,
+              [menuId, h.id, d, sessId, item.text]
+            );
+          }
+        }
+      }
+    }
   }
 
-  // Ensure all users have plain_password set
+  // Ensure any leftover static dummy test accounts are removed for clean dynamic data
+  await executeQuery("DELETE FROM student_allocations WHERE id IN ('alloc-rajesh', 'alloc-24civil001') OR student_id IN ('stu-rajesh-phd', 'stu-24civil001')");
+  await executeQuery("DELETE FROM students WHERE id IN ('stu-rajesh-phd', 'stu-24civil001') OR roll_number IN ('25PHDCSE01', '24CIVIL001')");
+  await executeQuery("DELETE FROM users WHERE id IN ('usr-student-rajesh', 'usr-ravi-kumar')");
+
+  // Ensure all active staff users have plain_password set
   await executeQuery("UPDATE users SET plain_password = 'Aknu@2026!' WHERE plain_password IS NULL");
 
-  console.log('[Seed] Database ready: Super Admin active, academic master list verified, live data preserved.');
+  console.log('[Seed] Database ready: Super Admin active, academic master list verified, live dynamic data preserved.');
 }

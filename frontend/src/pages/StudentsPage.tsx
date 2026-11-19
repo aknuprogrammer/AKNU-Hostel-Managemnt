@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { apiRequest } from '../services/api.js';
 import { StudentProfile, Hostel } from '../types.js';
 import { useAuth } from '../context/AuthContext.js';
@@ -45,7 +45,10 @@ import {
   Eye,
   X,
   SlidersHorizontal,
-  UtensilsCrossed
+  UtensilsCrossed,
+  UserCheck,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 
 const DEFAULT_COURSES: AcademicCourse[] = [
@@ -93,17 +96,28 @@ export const StudentsPage: React.FC = () => {
     { id: 'dept-econ', code: 'ECON', name: 'Economics' }
   ]);
   const [courses, setCourses] = useState<AcademicCourse[]>(DEFAULT_COURSES);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isFetching, setIsFetching] = useState(false);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [hostelFilter, setHostelFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [programLevelFilter, setProgramLevelFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
 
-  // Dynamic filter options derived from table data
+  // Debounce search input to avoid triggering queries on every keystroke
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setCurrentPage(1);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  // Dynamic filter metadata from backend
   const [filterMeta, setFilterMeta] = useState<{
     levels: Array<{ value: string; label: string; count: number }>;
-    courses: Array<{ id: string; name: string; program_level?: string; count: number }>;
+    courses: Array<{ id: string; name: string; code?: string; program_level?: string; count: number }>;
     hostels: Array<{ id: string; name: string; code: string; isUnassigned: boolean; count: number }>;
     statuses: Array<{ value: string; label: string; count: number }>;
   }>({
@@ -113,68 +127,75 @@ export const StudentsPage: React.FC = () => {
     statuses: []
   });
 
-  // Derived filter options directly from the added students data
+  // Stable filter options - DO NOT depend on filtered students so options never disappear or flicker
   const availableLevels = useMemo(() => {
     if (filterMeta.levels.length > 0) return filterMeta.levels;
-    const map = new Map<string, number>();
-    students.forEach((s) => {
-      const lvl = s.program_level || 'UG';
-      map.set(lvl, (map.get(lvl) || 0) + 1);
-    });
-    return Array.from(map.entries()).map(([lvl, count]) => ({
-      value: lvl,
-      label: lvl === 'UG' ? 'UG (Undergrad)' : lvl === 'PG' ? 'PG (Postgrad)' : lvl === 'PhD' ? 'Ph.D (Doctoral)' : lvl,
-      count
-    }));
-  }, [filterMeta.levels, students]);
+    return [
+      { value: 'UG', label: 'UG (Undergraduate)', count: 0 },
+      { value: 'PG', label: 'PG (Postgraduate)', count: 0 },
+      { value: 'PhD', label: 'Ph.D (Doctoral)', count: 0 }
+    ];
+  }, [filterMeta.levels]);
 
   const availableCourses = useMemo(() => {
+    if (courses.length > 0) {
+      return courses.map((c) => ({
+        id: c.id,
+        name: c.name,
+        code: c.code,
+        program_level: c.program_level || 'UG',
+        count: 0
+      }));
+    }
     if (filterMeta.courses.length > 0) return filterMeta.courses;
-    const map = new Map<string, { id: string; name: string; program_level?: string; count: number }>();
-    students.forEach((s) => {
-      const id = s.course_id || s.course_name || 'unassigned';
-      const name = s.course_name || 'Unassigned Course';
-      const prev = map.get(id);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        map.set(id, { id, name, program_level: s.program_level, count: 1 });
-      }
-    });
-    return Array.from(map.values());
-  }, [filterMeta.courses, students]);
+    return DEFAULT_COURSES.map((c) => ({
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      program_level: c.program_level || 'UG',
+      count: 0
+    }));
+  }, [courses, filterMeta.courses]);
 
   const availableHostels = useMemo(() => {
-    if (filterMeta.hostels.length > 0) return filterMeta.hostels;
-    const map = new Map<string, { id: string; name: string; code: string; isUnassigned: boolean; count: number }>();
-    students.forEach((s) => {
-      const isUnassigned = !s.hostel_name || s.hostel_name === 'Unassigned' || !s.room_number;
-      const id = isUnassigned ? 'unassigned' : (s.hostel_id || s.hostel_name || 'unassigned');
-      const name = isUnassigned ? 'Unassigned to Bed' : (s.hostel_name || 'Unassigned');
-      const code = s.hostel_code || '';
-      const prev = map.get(id);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        map.set(id, { id, name, code, isUnassigned, count: 1 });
-      }
-    });
-    return Array.from(map.values());
-  }, [filterMeta.hostels, students]);
+    const list: Array<{ id: string; name: string; code: string; isUnassigned: boolean; count: number }> = [
+      { id: 'unassigned', name: 'Unassigned to Bed', code: '', isUnassigned: true, count: 0 }
+    ];
+    if (hostels.length > 0) {
+      hostels.forEach((h) => {
+        list.push({
+          id: h.id,
+          name: h.name,
+          code: h.code || '',
+          isUnassigned: false,
+          count: h.occupied_beds || 0
+        });
+      });
+      return list;
+    }
+    if (filterMeta.hostels.length > 0) {
+      return [
+        ...list,
+        ...filterMeta.hostels.filter((h) => !h.isUnassigned).map((h) => ({
+          id: h.id,
+          name: h.name,
+          code: h.code,
+          isUnassigned: false,
+          count: h.count
+        }))
+      ];
+    }
+    return list;
+  }, [hostels, filterMeta.hostels]);
 
   const availableStatuses = useMemo(() => {
-    if (filterMeta.statuses.length > 0) return filterMeta.statuses;
-    const map = new Map<string, number>();
-    students.forEach((s) => {
-      const st = s.hostel_status || 'active';
-      map.set(st, (map.get(st) || 0) + 1);
-    });
-    return Array.from(map.entries()).map(([st, count]) => ({
-      value: st,
-      label: st.charAt(0).toUpperCase() + st.slice(1),
-      count
-    }));
-  }, [filterMeta.statuses, students]);
+    return [
+      { value: 'active', label: 'Active Resident', count: 0 },
+      { value: 'vacated', label: 'Vacated', count: 0 },
+      { value: 'graduated', label: 'Graduated', count: 0 },
+      { value: 'suspended', label: 'Suspended', count: 0 }
+    ];
+  }, []);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -185,7 +206,9 @@ export const StudentsPage: React.FC = () => {
     total: 0,
     totalBoys: 0,
     totalGirls: 0,
-    totalMessActive: 0
+    totalMessActive: 0,
+    totalAllocated: 0,
+    totalUnallocated: 0
   });
 
   const [selectedStudentForId, setSelectedStudentForId] = useState<StudentProfile | null>(null);
@@ -322,19 +345,36 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
+  const handleProgramLevelChange = (val: string) => {
+    setProgramLevelFilter(val);
+    setCourseFilter('');
     setCurrentPage(1);
-  }, [search, hostelFilter, statusFilter, programLevelFilter, courseFilter]);
+  };
 
-  useEffect(() => {
-    fetchStudents();
-  }, [search, hostelFilter, statusFilter, programLevelFilter, courseFilter, currentPage, pageSize]);
+  const handleCourseChange = (val: string) => {
+    setCourseFilter(val);
+    setCurrentPage(1);
+  };
 
-  const fetchStudents = async () => {
+  const handleHostelChange = (val: string) => {
+    setHostelFilter(val);
+    setCurrentPage(1);
+  };
+
+  const handleStatusChange = (val: string) => {
+    setStatusFilter(val);
+    setCurrentPage(1);
+  };
+
+  const fetchStudents = useCallback(async (isInitial = false) => {
     try {
-      setLoading(true);
+      if (isInitial) {
+        setInitialLoading(true);
+      } else {
+        setIsFetching(true);
+      }
       const params = new URLSearchParams();
-      if (search) params.append('search', search);
+      if (debouncedSearch) params.append('search', debouncedSearch);
       if (hostelFilter) params.append('hostelId', hostelFilter);
       if (statusFilter) params.append('status', statusFilter);
       if (programLevelFilter) params.append('programLevel', programLevelFilter);
@@ -346,7 +386,14 @@ export const StudentsPage: React.FC = () => {
         success: boolean;
         data: StudentProfile[];
         pagination?: { page: number; limit: number; total: number; totalPages: number };
-        stats?: { total: number; totalBoys: number; totalGirls: number; totalMessActive: number };
+        stats?: {
+          total: number;
+          totalBoys: number;
+          totalGirls: number;
+          totalMessActive: number;
+          totalAllocated?: number;
+          totalUnallocated?: number;
+        };
       }>(`/students?${params.toString()}`);
       if (res.success) {
         setStudents(res.data);
@@ -358,22 +405,36 @@ export const StudentsPage: React.FC = () => {
           setTotalPages(1);
         }
         if (res.stats) {
-          setStats(res.stats);
+          setStats({
+            total: res.stats.total,
+            totalBoys: res.stats.totalBoys,
+            totalGirls: res.stats.totalGirls,
+            totalMessActive: res.stats.totalMessActive,
+            totalAllocated: res.stats.totalAllocated ?? 0,
+            totalUnallocated: res.stats.totalUnallocated ?? 0
+          });
         } else {
           setStats({
             total: res.pagination?.total ?? res.data.length,
             totalBoys: res.data.filter((s) => s.gender === 'male').length,
             totalGirls: res.data.filter((s) => s.gender === 'female').length,
-            totalMessActive: res.data.filter((s) => s.mess_eligibility).length
+            totalMessActive: res.data.filter((s) => s.mess_eligibility).length,
+            totalAllocated: res.data.filter((s) => s.allocation_id).length,
+            totalUnallocated: res.data.filter((s) => !s.allocation_id).length
           });
         }
       }
     } catch (e) {
       console.error('Error fetching students:', e);
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setIsFetching(false);
     }
-  };
+  }, [debouncedSearch, hostelFilter, statusFilter, programLevelFilter, courseFilter, currentPage, pageSize]);
+
+  useEffect(() => {
+    fetchStudents(initialLoading);
+  }, [fetchStudents]);
 
   const handleSyncBiometric = async (studentId: string) => {
     const confirmed = await confirm({
@@ -457,20 +518,24 @@ export const StudentsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Summary KPI Cards (Strict Wing Isolation) */}
+      {/* Summary KPI Cards (Accurate Titles and Values) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
           <div className="flex items-start justify-between">
             <div className="min-w-0">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">
-                {user?.assignedCategory === 'boys' ? "Boys Residents" : user?.assignedCategory === 'girls' ? "Girls Residents" : "Total Residents"}
+                {user?.assignedCategory === 'boys' ? "Boys Residents" : user?.assignedCategory === 'girls' ? "Girls Residents" : "Total Students"}
               </span>
               <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
                 {stats.total}
               </span>
               <div className="flex items-center gap-1.5 mt-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                <span className="text-[11px] text-emerald-700 font-semibold truncate">Active on Campus</span>
+                <span className="text-[11px] text-emerald-700 font-semibold truncate">
+                  {stats.totalAllocated > 0 || stats.totalUnallocated > 0
+                    ? `${stats.totalAllocated} Allocated • ${stats.totalUnallocated} Pending`
+                    : "Active on Campus"}
+                </span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-lg bg-[#23395D]/5 border border-[#23395D]/10 flex items-center justify-center text-[#23395D] shrink-0">
@@ -479,64 +544,21 @@ export const StudentsPage: React.FC = () => {
           </div>
         </div>
 
-        {user?.assignedCategory === 'boys' ? (
-          <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Boys Hostels</span>
-                <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
-                  {stats.totalBoys}
-                </span>
-                <span
-                  className="text-[11px] text-blue-700 font-semibold mt-1.5 block truncate"
-                  title={boysHostels.map((h) => h.name).join(', ')}
-                >
-                  {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-                <Building2 className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-        ) : user?.assignedCategory === 'girls' ? (
-          <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Girls Hostels</span>
-                <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
-                  {stats.totalGirls}
-                </span>
-                <span
-                  className="text-[11px] text-rose-700 font-semibold mt-1.5 block truncate"
-                  title={girlsHostels.map((h) => h.name).join(', ')}
-                >
-                  {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-                <Building2 className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-        ) : (
+        {user?.assignedCategory === 'boys' || user?.assignedCategory === 'girls' ? (
           <>
             <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="min-w-0">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Boys Hostels</span>
-                  <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
-                    {stats.totalBoys}
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Room Allocated</span>
+                  <span className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1 block tracking-tight">
+                    {stats.totalAllocated}
                   </span>
-                  <span
-                    className="text-[11px] text-blue-700 font-semibold mt-1.5 block truncate"
-                    title={boysHostels.map((h) => h.name).join(', ')}
-                  >
-                    {boysHostels.length > 0 ? boysHostels.map((h) => h.name).join(' & ') : "Boys' Wings"}
+                  <span className="text-[11px] text-emerald-600 font-semibold mt-1.5 block truncate">
+                    Assigned to Bed & Room
                   </span>
                 </div>
-                <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-                  <Building2 className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                  <CheckCircle2 className="w-5 h-5" />
                 </div>
               </div>
             </div>
@@ -544,19 +566,58 @@ export const StudentsPage: React.FC = () => {
             <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
               <div className="flex items-start justify-between">
                 <div className="min-w-0">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Girls Hostels</span>
-                  <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Pending Allocation</span>
+                  <span className="text-2xl sm:text-3xl font-black text-amber-700 mt-1 block tracking-tight">
+                    {stats.totalUnallocated}
+                  </span>
+                  <span className="text-[11px] text-amber-600 font-semibold mt-1.5 block truncate">
+                    Awaiting Room Allotment
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Male Students (Boys)</span>
+                  <span className="text-2xl sm:text-3xl font-black text-blue-700 mt-1 block tracking-tight">
+                    {stats.totalBoys}
+                  </span>
+                  <span
+                    className="text-[11px] text-blue-600 font-semibold mt-1.5 block truncate"
+                    title={boysHostels.map((h) => h.name).join(', ')}
+                  >
+                    {boysHostels.length > 0 ? `Across ${boysHostels.length} Boys Hostels` : "Enrolled Male Residents"}
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Female Students (Girls)</span>
+                  <span className="text-2xl sm:text-3xl font-black text-rose-700 mt-1 block tracking-tight">
                     {stats.totalGirls}
                   </span>
                   <span
-                    className="text-[11px] text-rose-700 font-semibold mt-1.5 block truncate"
+                    className="text-[11px] text-rose-600 font-semibold mt-1.5 block truncate"
                     title={girlsHostels.map((h) => h.name).join(', ')}
                   >
-                    {girlsHostels.length > 0 ? girlsHostels.map((h) => h.name).join(' & ') : "Girls' Wings"}
+                    {girlsHostels.length > 0 ? `Across ${girlsHostels.length} Girls Hostels` : "Enrolled Female Residents"}
                   </span>
                 </div>
                 <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0">
-                  <Building2 className="w-5 h-5" />
+                  <UserCheck className="w-5 h-5" />
                 </div>
               </div>
             </div>
@@ -577,25 +638,6 @@ export const StudentsPage: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {user?.assignedCategory && user.assignedCategory !== 'all' && (
-          <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">Wing Buildings</span>
-                <span className="text-2xl sm:text-3xl font-black text-[#23395D] mt-1 block tracking-tight">
-                  {hostels.length}
-                </span>
-                <span className="text-[11px] text-slate-500 font-semibold mt-1.5 block truncate">
-                  {user.assignedCategory === 'boys' ? "Boys Hostels Registered" : "Girls Hostels Registered"}
-                </span>
-              </div>
-              <div className="w-10 h-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
-                <Building className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Unified Responsive Search & Filters Toolbar */}
@@ -615,17 +657,12 @@ export const StudentsPage: React.FC = () => {
           <div className="sm:col-span-1 md:col-span-2 lg:col-span-2">
             <Select
               value={programLevelFilter}
-              onChange={(e) => {
-                setProgramLevelFilter(e.target.value);
-                setCourseFilter('');
-              }}
+              onChange={(e) => handleProgramLevelChange(e.target.value)}
             >
-              <option value="">
-                All Levels {availableLevels.length > 0 && totalRecords > 0 ? `(${totalRecords})` : ''}
-              </option>
+              <option value="">All Program Levels</option>
               {availableLevels.map((lvl) => (
                 <option key={lvl.value} value={lvl.value}>
-                  {lvl.label} ({lvl.count})
+                  {lvl.label}
                 </option>
               ))}
             </Select>
@@ -635,16 +672,14 @@ export const StudentsPage: React.FC = () => {
           <div className="sm:col-span-1 md:col-span-2 lg:col-span-2">
             <Select
               value={courseFilter}
-              onChange={(e) => setCourseFilter(e.target.value)}
+              onChange={(e) => handleCourseChange(e.target.value)}
             >
-              <option value="">
-                All Degrees {availableCourses.length > 0 && totalRecords > 0 ? `(${totalRecords})` : ''}
-              </option>
+              <option value="">All Degrees / Programmes</option>
               {availableCourses
                 .filter((c) => !programLevelFilter || !c.program_level || c.program_level === programLevelFilter)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.count})
+                    {c.name} {c.code ? `(${c.code})` : ''}
                   </option>
                 ))}
             </Select>
@@ -654,14 +689,12 @@ export const StudentsPage: React.FC = () => {
           <div className="sm:col-span-1 md:col-span-2 lg:col-span-2">
             <Select
               value={hostelFilter}
-              onChange={(e) => setHostelFilter(e.target.value)}
+              onChange={(e) => handleHostelChange(e.target.value)}
             >
-              <option value="">
-                All Hostels & Wings {availableHostels.length > 0 && totalRecords > 0 ? `(${totalRecords})` : ''}
-              </option>
+              <option value="">All Hostels & Wings</option>
               {availableHostels.map((h) => (
                 <option key={h.id} value={h.id}>
-                  {h.isUnassigned ? '⏳ ' : ''}{h.name} {h.code ? `(${h.code})` : ''} ({h.count})
+                  {h.isUnassigned ? '⏳ ' : ''}{h.name} {h.code ? `(${h.code})` : ''}
                 </option>
               ))}
             </Select>
@@ -671,14 +704,12 @@ export const StudentsPage: React.FC = () => {
           <div className="sm:col-span-1 md:col-span-2 lg:col-span-2">
             <Select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => handleStatusChange(e.target.value)}
             >
-              <option value="">
-                All Statuses {availableStatuses.length > 0 && totalRecords > 0 ? `(${totalRecords})` : ''}
-              </option>
+              <option value="">All Statuses</option>
               {availableStatuses.map((st) => (
                 <option key={st.value} value={st.value}>
-                  {st.label} ({st.count})
+                  {st.label}
                 </option>
               ))}
             </Select>
@@ -701,7 +732,7 @@ export const StudentsPage: React.FC = () => {
                     icon={<X className="w-3 h-3" />}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setSearch('')}
+                    onClick={() => { setSearch(''); setCurrentPage(1); }}
                     title="Clear search"
                   />
                 </span>
@@ -714,7 +745,7 @@ export const StudentsPage: React.FC = () => {
                     icon={<X className="w-3 h-3" />}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setProgramLevelFilter('')}
+                    onClick={() => handleProgramLevelChange('')}
                     title="Clear level"
                   />
                 </span>
@@ -727,7 +758,7 @@ export const StudentsPage: React.FC = () => {
                     icon={<X className="w-3 h-3" />}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setCourseFilter('')}
+                    onClick={() => handleCourseChange('')}
                     title="Clear degree"
                   />
                 </span>
@@ -740,7 +771,7 @@ export const StudentsPage: React.FC = () => {
                     icon={<X className="w-3 h-3" />}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setHostelFilter('')}
+                    onClick={() => handleHostelChange('')}
                     title="Clear hostel"
                   />
                 </span>
@@ -753,7 +784,7 @@ export const StudentsPage: React.FC = () => {
                     icon={<X className="w-3 h-3" />}
                     size="xs"
                     variant="ghost"
-                    onClick={() => setStatusFilter('')}
+                    onClick={() => handleStatusChange('')}
                     title="Clear status"
                   />
                 </span>
@@ -769,6 +800,7 @@ export const StudentsPage: React.FC = () => {
                 setCourseFilter('');
                 setHostelFilter('');
                 setStatusFilter('');
+                setCurrentPage(1);
               }}
               className="text-rose-600 hover:text-rose-700"
             >
@@ -795,13 +827,16 @@ export const StudentsPage: React.FC = () => {
           </tr>
         </TableHeader>
         <TableBody>
-          {loading ? (
+          {initialLoading ? (
             <TableLoading colSpan={10} message="Loading university student records..." />
           ) : students.length === 0 ? (
             <TableEmpty colSpan={10} message="No matching student records found." />
           ) : (
             students.map((stu) => (
-              <TableRow key={stu.id}>
+              <TableRow
+                key={stu.id}
+                className={isFetching ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+              >
                 <TableCell className="whitespace-nowrap">
                   <div className="flex items-center space-x-2.5 whitespace-nowrap">
                     {stu.photo_url ? (

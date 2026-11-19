@@ -85,7 +85,9 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
          COUNT(DISTINCT s.id) as total,
          COUNT(DISTINCT CASE WHEN s.gender = 'male' THEN s.id END) as total_boys,
          COUNT(DISTINCT CASE WHEN s.gender = 'female' THEN s.id END) as total_girls,
-         COUNT(DISTINCT CASE WHEN s.mess_eligibility = true THEN s.id END) as total_mess_active
+         COUNT(DISTINCT CASE WHEN s.mess_eligibility = true THEN s.id END) as total_mess_active,
+         COUNT(DISTINCT CASE WHEN sa.id IS NOT NULL AND sa.status = 'active' THEN s.id END) as total_allocated,
+         COUNT(DISTINCT CASE WHEN sa.id IS NULL OR sa.status != 'active' THEN s.id END) as total_unallocated
        FROM students s
        LEFT JOIN courses c ON s.course_id = c.id
        LEFT JOIN student_allocations sa ON s.id = sa.student_id AND sa.status = 'active'
@@ -98,6 +100,8 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
     const totalBoys = parseInt(countRes.rows[0]?.total_boys || '0');
     const totalGirls = parseInt(countRes.rows[0]?.total_girls || '0');
     const totalMessActive = parseInt(countRes.rows[0]?.total_mess_active || '0');
+    const totalAllocated = parseInt(countRes.rows[0]?.total_allocated || '0');
+    const totalUnallocated = parseInt(countRes.rows[0]?.total_unallocated || '0');
 
     const querySql = `
       SELECT s.*,
@@ -133,7 +137,9 @@ export async function getStudents(req: AuthRequest, res: Response): Promise<void
         total,
         totalBoys,
         totalGirls,
-        totalMessActive
+        totalMessActive,
+        totalAllocated,
+        totalUnallocated
       }
     });
   } catch (err: any) {
@@ -1218,6 +1224,8 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
   const { id } = req.params;
   const {
     fullName,
+    rollNumber,
+    regNumber,
     phone,
     email,
     gender,
@@ -1261,6 +1269,32 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
       return;
     }
 
+    // Check Roll Number uniqueness if changing roll number
+    const cleanRollNumber = rollNumber ? String(rollNumber).trim().toUpperCase() : null;
+    if (cleanRollNumber && cleanRollNumber !== (current.roll_number || '').toUpperCase()) {
+      const rollCheck = await executeQuery(
+        'SELECT id FROM students WHERE UPPER(roll_number) = UPPER($1) AND id != $2',
+        [cleanRollNumber, id]
+      );
+      if (rollCheck.rowCount > 0) {
+        res.status(400).json({ success: false, error: `Roll Number "${cleanRollNumber}" is already in use by another student` });
+        return;
+      }
+    }
+
+    // Check Registration Number uniqueness if changing reg number
+    const cleanRegNumber = regNumber ? String(regNumber).trim().toUpperCase() : null;
+    if (cleanRegNumber && cleanRegNumber !== (current.reg_number || '').toUpperCase()) {
+      const regCheck = await executeQuery(
+        'SELECT id FROM students WHERE UPPER(reg_number) = UPPER($1) AND id != $2',
+        [cleanRegNumber, id]
+      );
+      if (regCheck.rowCount > 0) {
+        res.status(400).json({ success: false, error: `Registration Number "${cleanRegNumber}" is already in use by another student` });
+        return;
+      }
+    }
+
     // Resolve program level if changing course
     let resolvedProgramLevel = programLevel;
     if (!resolvedProgramLevel && courseId && courseId !== current.course_id) {
@@ -1290,31 +1324,35 @@ export async function updateStudent(req: AuthRequest, res: Response): Promise<vo
       // 1. Update students record
       await query(
         `UPDATE students SET
-          full_name = COALESCE($1, full_name),
-          phone = COALESCE($2, phone),
-          email = COALESCE($3, email),
-          gender = COALESCE($4, gender),
-          department_id = COALESCE($5, department_id),
-          course_id = COALESCE($6, course_id),
-          program_level = COALESCE($7, program_level),
-          year_of_study = COALESCE($8, year_of_study),
-          current_semester = COALESCE($9, current_semester),
-          permanent_address = COALESCE($10, permanent_address),
-          guardian_name = COALESCE($11, guardian_name),
-          guardian_phone = COALESCE($12, guardian_phone),
-          mess_eligibility = COALESCE($13, mess_eligibility),
-          hostel_status = COALESCE($14, hostel_status),
-          admission_fee_status = COALESCE($15, admission_fee_status),
-          admission_fee_total = COALESCE($16, admission_fee_total),
-          admission_fee_paid = COALESCE($17, admission_fee_paid),
-          admission_fee_pending = COALESCE($18, admission_fee_pending),
-          admission_fee_payment_date = COALESCE($19, admission_fee_payment_date),
-          admission_fee_receipt_no = COALESCE($20, admission_fee_receipt_no),
-          admission_fee_payment_mode = COALESCE($21, admission_fee_payment_mode),
-          photo_url = COALESCE($22, photo_url),
+          roll_number = COALESCE($1, roll_number),
+          reg_number = COALESCE($2, reg_number),
+          full_name = COALESCE($3, full_name),
+          phone = COALESCE($4, phone),
+          email = COALESCE($5, email),
+          gender = COALESCE($6, gender),
+          department_id = COALESCE($7, department_id),
+          course_id = COALESCE($8, course_id),
+          program_level = COALESCE($9, program_level),
+          year_of_study = COALESCE($10, year_of_study),
+          current_semester = COALESCE($11, current_semester),
+          permanent_address = COALESCE($12, permanent_address),
+          guardian_name = COALESCE($13, guardian_name),
+          guardian_phone = COALESCE($14, guardian_phone),
+          mess_eligibility = COALESCE($15, mess_eligibility),
+          hostel_status = COALESCE($16, hostel_status),
+          admission_fee_status = COALESCE($17, admission_fee_status),
+          admission_fee_total = COALESCE($18, admission_fee_total),
+          admission_fee_paid = COALESCE($19, admission_fee_paid),
+          admission_fee_pending = COALESCE($20, admission_fee_pending),
+          admission_fee_payment_date = COALESCE($21, admission_fee_payment_date),
+          admission_fee_receipt_no = COALESCE($22, admission_fee_receipt_no),
+          admission_fee_payment_mode = COALESCE($23, admission_fee_payment_mode),
+          photo_url = COALESCE($24, photo_url),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $23`,
+        WHERE id = $25`,
         [
+          cleanRollNumber,
+          cleanRegNumber,
           fullName ? fullName.trim() : null,
           phone ? phone.trim() : null,
           email ? email.trim().toLowerCase() : null,

@@ -27,6 +27,8 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
   const [isUpdating, setIsUpdating] = useState(false);
 
   const [form, setForm] = useState({
+    rollNumber: '',
+    regNumber: '',
     fullName: '',
     phone: '',
     email: '',
@@ -53,6 +55,8 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
   useEffect(() => {
     if (student && isOpen) {
       setForm({
+        rollNumber: student.roll_number || '',
+        regNumber: student.reg_number || '',
         fullName: student.full_name || '',
         phone: student.phone || '',
         email: student.email || '',
@@ -111,8 +115,8 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Edit Student Profile: ${student.full_name || ''}`}
-      subtitle={`Roll Number: ${student.roll_number || ''} • Reg: ${student.reg_number || ''}`}
+      title={`Edit Student Profile: ${form.fullName || student.full_name || ''}`}
+      subtitle={`Reg: ${form.regNumber || student.reg_number || ''}`}
       icon={<Pencil className="w-5 h-5 text-indigo-600" />}
       size="2xl"
     >
@@ -122,6 +126,28 @@ export const EditStudentModal: React.FC<EditStudentModalProps> = ({
           onChange={(url) => setForm((prev) => ({ ...prev, photoUrl: url }))}
           label="Student Face Photo (Required for Biometric Dining Verification)"
         />
+
+        {/* Identity & Roll Number (Editable to correct entry mistakes) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input
+            required
+            label="University Roll / Hall Ticket Number *"
+            placeholder="e.g. 24CIVIL001"
+            value={form.rollNumber}
+            onChange={(e) => setForm({ ...form, rollNumber: e.target.value.toUpperCase() })}
+            className="font-mono uppercase font-bold"
+            helperText="Edit if incorrect roll number was entered"
+          />
+
+          <Input
+            required
+            label="Hostel Registration Number *"
+            placeholder="e.g. AKNU/2026/VBH/CIVIL/0001"
+            value={form.regNumber}
+            onChange={(e) => setForm({ ...form, regNumber: e.target.value.toUpperCase() })}
+            className="font-mono uppercase font-bold"
+          />
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input

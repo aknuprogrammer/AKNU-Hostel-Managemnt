@@ -98,6 +98,31 @@ export default function App() {
   });
   const [togglingMobileMeal, setTogglingMobileMeal] = useState<string | null>(null);
 
+  // Dynamic Meal Sessions Timings
+  const [mobileMealSessions, setMobileMealSessions] = useState<any[]>([
+    { id: 'ms-breakfast', code: 'breakfast', name: 'Breakfast', start_time: '07:00', end_time: '10:00' },
+    { id: 'ms-lunch', code: 'lunch', name: 'Lunch', start_time: '12:00', end_time: '15:00' },
+    { id: 'ms-snacks', code: 'snacks', name: 'Snacks', start_time: '16:30', end_time: '18:00' },
+    { id: 'ms-dinner', code: 'dinner', name: 'Dinner', start_time: '19:00', end_time: '22:30' }
+  ]);
+
+  const getMobileSessionTiming = (codeOrId: string, fallback: string) => {
+    const s = mobileMealSessions.find(
+      (sess) => sess.code === codeOrId || sess.id === codeOrId || sess.id?.toLowerCase().includes(codeOrId)
+    );
+    return s ? `${s.start_time} - ${s.end_time}` : fallback;
+  };
+
+  // Dynamic Today Dining Menus
+  const [mobileTodayMenus, setMobileTodayMenus] = useState<any[]>([]);
+
+  const getMobileMenuItems = (codeOrId: string) => {
+    const item = mobileTodayMenus.find(
+      (m) => m.session_code === codeOrId || m.meal_session_id === codeOrId || m.session_code?.toLowerCase().includes(codeOrId)
+    );
+    return item?.menu_items?.trim() || 'Menu not scheduled yet for today';
+  };
+
   // Warden Kitchen Preparation Counts state
   const [wardenKitchenCounts, setWardenKitchenCounts] = useState<any>(null);
 
@@ -187,8 +212,12 @@ export default function App() {
     }
   };
 
-  // Fetch session & recent scans whenever Warden screen is active
+  // Fetch session & recent scans whenever Warden/Student screen is active
   useEffect(() => {
+    if (currentUser) {
+      fetchMobileMealSessions();
+      fetchMobileTodayMenu();
+    }
     if (currentUser && (currentRole === 'warden' || currentUser.role?.includes('warden') || currentUser.role === 'super_admin')) {
       fetchActiveSession();
       fetchRecentScans();
@@ -203,6 +232,36 @@ export default function App() {
       fetchMobileMealAttendance(mobileMealDate);
     }
   }, [currentUser, currentRole]);
+
+  // Fetch dynamic meal sessions from backend
+  const fetchMobileMealSessions = async () => {
+    try {
+      const res = await mobileApiRequest<{ success: boolean; data: any[] }>('/mess/sessions');
+      if (res.success && res.data && res.data.length > 0) {
+        setMobileMealSessions(res.data);
+      }
+    } catch (e) {
+      console.log('Error fetching meal sessions on mobile:', e);
+    }
+  };
+
+  // Fetch dynamic today's dining menu from backend
+  const fetchMobileTodayMenu = async () => {
+    try {
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayDay = days[new Date().getDay()];
+      const hostelId = currentUser?.student?.hostel_id || '';
+      const url = hostelId
+        ? `/mess/menu?hostelId=${hostelId}&dayOfWeek=${todayDay}`
+        : `/mess/menu?dayOfWeek=${todayDay}`;
+      const res = await mobileApiRequest<{ success: boolean; data: any[] }>(url);
+      if (res.success && res.data) {
+        setMobileTodayMenus(res.data);
+      }
+    } catch (e) {
+      console.log('Error fetching dynamic mobile menu:', e);
+    }
+  };
 
   // Fetch student meal attendance
   const fetchMobileMealAttendance = async (dateToFetch?: string) => {
@@ -1342,7 +1401,7 @@ export default function App() {
                 {/* Breakfast */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.breakfast ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.breakfast ? '#a7f3d0' : '#e2e8f0' }}>
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌅 Breakfast (07:00 - 10:00)</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌅 Breakfast ({getMobileSessionTiming('breakfast', '07:00 - 10:00')})</Text>
                     <Text style={{ fontSize: 10, color: mobileMealAttendance.breakfast ? '#065f46' : '#64748b', marginTop: 2 }}>
                       {mobileMealAttendance.breakfast ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
                     </Text>
@@ -1366,7 +1425,7 @@ export default function App() {
                 {/* Lunch */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.lunch ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.lunch ? '#a7f3d0' : '#e2e8f0' }}>
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☀️ Lunch (12:00 - 15:00)</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☀️ Lunch ({getMobileSessionTiming('lunch', '12:00 - 15:00')})</Text>
                     <Text style={{ fontSize: 10, color: mobileMealAttendance.lunch ? '#065f46' : '#64748b', marginTop: 2 }}>
                       {mobileMealAttendance.lunch ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
                     </Text>
@@ -1390,7 +1449,7 @@ export default function App() {
                 {/* Snacks */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.snacks ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.snacks ? '#a7f3d0' : '#e2e8f0' }}>
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☕ Snacks (16:30 - 18:00)</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>☕ Snacks ({getMobileSessionTiming('snacks', '16:30 - 18:00')})</Text>
                     <Text style={{ fontSize: 10, color: mobileMealAttendance.snacks ? '#065f46' : '#64748b', marginTop: 2 }}>
                       {mobileMealAttendance.snacks ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
                     </Text>
@@ -1414,7 +1473,7 @@ export default function App() {
                 {/* Dinner */}
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: mobileMealAttendance.dinner ? '#ecfdf5' : '#f8fafc', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: mobileMealAttendance.dinner ? '#a7f3d0' : '#e2e8f0' }}>
                   <View>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌙 Dinner (19:00 - 22:30)</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#1e293b' }}>🌙 Dinner ({getMobileSessionTiming('dinner', '19:00 - 22:30')})</Text>
                     <Text style={{ fontSize: 10, color: mobileMealAttendance.dinner ? '#065f46' : '#64748b', marginTop: 2 }}>
                       {mobileMealAttendance.dinner ? '✓ Attending • Counted for kitchen' : '✕ Opted Out • Skipping'}
                     </Text>
@@ -1446,42 +1505,26 @@ export default function App() {
                 </Text>
               </View>
               <View style={styles.menuRow}>
-                <Text style={styles.menuMealName}>Breakfast (07:00 - 10:00)</Text>
-                <Text style={styles.menuItems}>
-                  {currentUser?.student?.gender === 'female' || (currentUser?.student?.hostel_name || '').toLowerCase().includes('girl')
-                    ? 'Masala Dosa, Upma, Coconut Chutney, Sambar, Tea / Coffee'
-                    : 'Idli, Medu Vada, Peanut Chutney, Sambar, Tea / Coffee'}
-                </Text>
+                <Text style={styles.menuMealName}>Breakfast ({getMobileSessionTiming('breakfast', '07:00 - 10:00')})</Text>
+                <Text style={styles.menuItems}>{getMobileMenuItems('breakfast')}</Text>
               </View>
               <View style={styles.menuDivider} />
               <View style={styles.menuRow}>
-                <Text style={styles.menuMealName}>Lunch (12:00 - 15:00)</Text>
-                <Text style={styles.menuItems}>
-                  {currentUser?.student?.gender === 'female' || (currentUser?.student?.hostel_name || '').toLowerCase().includes('girl')
-                    ? 'Steamed Rice, Palak Pappu, Mixed Veg Kurma, Majjiga Pulusu, Fresh Curd'
-                    : 'Steamed Rice, Andhra Tomato Pappu, Aloo Fry, Sambar, Curd, Papad'}
-                </Text>
+                <Text style={styles.menuMealName}>Lunch ({getMobileSessionTiming('lunch', '12:00 - 15:00')})</Text>
+                <Text style={styles.menuItems}>{getMobileMenuItems('lunch')}</Text>
               </View>
               <View style={styles.menuDivider} />
               <View style={styles.menuRow}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={styles.menuMealName}>Snacks (16:30 - 18:00)</Text>
+                  <Text style={styles.menuMealName}>Snacks ({getMobileSessionTiming('snacks', '16:30 - 18:00')})</Text>
                   <Text style={styles.optionalBadge}>Optional</Text>
                 </View>
-                <Text style={styles.menuItems}>
-                  {currentUser?.student?.gender === 'female' || (currentUser?.student?.hostel_name || '').toLowerCase().includes('girl')
-                    ? 'Green Tea / Fresh Milk, Osmania Biscuits (Not currently serving)'
-                    : 'Evening Tea / Coffee, Salted Biscuits (Not currently serving)'}
-                </Text>
+                <Text style={styles.menuItems}>{getMobileMenuItems('snacks')}</Text>
               </View>
               <View style={styles.menuDivider} />
               <View style={styles.menuRow}>
-                <Text style={styles.menuMealName}>Dinner (19:00 - 22:30)</Text>
-                <Text style={styles.menuItems}>
-                  {currentUser?.student?.gender === 'female' || (currentUser?.student?.hostel_name || '').toLowerCase().includes('girl')
-                    ? 'Phulka Roti, Paneer Butter Masala, Veg Biryani, Rasam, Curd'
-                    : 'Phulka Chapati, Chana Masala, Jeera Rice, Rasam, Fresh Curd'}
-                </Text>
+                <Text style={styles.menuMealName}>Dinner ({getMobileSessionTiming('dinner', '19:00 - 22:30')})</Text>
+                <Text style={styles.menuItems}>{getMobileMenuItems('dinner')}</Text>
               </View>
             </View>
 

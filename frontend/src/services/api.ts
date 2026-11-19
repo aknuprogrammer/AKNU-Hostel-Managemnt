@@ -56,7 +56,9 @@ export async function apiRequest<T = any>(
     if (data.resultStatus) {
       return data as T;
     }
-    throw new Error(data.error || data.message || `Request failed with status ${res.status}`);
+    const error: any = new Error(data.error || data.message || `Request failed with status ${res.status}`);
+    error.status = res.status;
+    throw error;
   }
 
   return data as T;
