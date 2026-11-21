@@ -21,11 +21,11 @@ import { authenticate, requireRoles } from '../middleware/auth.js';
 const router = Router();
 
 router.get('/sessions', authenticate, getMealSessions);
-router.put('/sessions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden'), updateAllMealSessions);
-router.put('/sessions/:id', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden'), updateMealSession);
+router.put('/sessions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), updateAllMealSessions);
+router.put('/sessions/:id', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), updateMealSession);
 router.get('/menu', authenticate, getMessMenu);
-router.post('/menu', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden'), updateMessMenu);
-router.delete('/menu/:id', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden'), deleteMessMenu);
+router.post('/menu', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), updateMessMenu);
+router.delete('/menu/:id', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), deleteMessMenu);
 router.get('/inventory', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), getInventory);
 router.post('/inventory/transactions', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), recordInventoryTransaction);
 router.post('/wastage', authenticate, requireRoles('super_admin', 'chief_warden', 'assistant_warden', 'junior_assistant'), recordFoodWastage);

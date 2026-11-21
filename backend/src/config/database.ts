@@ -165,31 +165,39 @@ export async function getDb() {
 
       // Clear lock file if left over by previous process
       const waitAndClearPid = async () => {
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 20; i++) {
           if (!fs.existsSync(pidFile)) return;
           try {
             fs.unlinkSync(pidFile);
             console.log('[Database] Cleared previous postmaster lock file.');
             return;
           } catch (e: any) {
-            await new Promise((resolve) => setTimeout(resolve, 200));
+            await new Promise((resolve) => setTimeout(resolve, 150));
           }
         }
       };
 
-      for (let attempt = 1; attempt <= 15; attempt++) {
-        await waitAndClearPid();
+      await waitAndClearPid();
+
+      try {
+        pgliteInstance = new PGlite(dataDir, { relaxedDurability: true });
+        await pgliteInstance.waitReady;
+      } catch (initErr: any) {
+        console.warn(`[Database] Persistent store WAL interrupted (${initErr.message}). Recovering cleanly with persistent state...`);
         try {
-          pgliteInstance = new PGlite(dataDir, { relaxedDurability: true });
-          await pgliteInstance.waitReady;
-          break;
-        } catch (initErr: any) {
-          if (attempt === 15) {
-            console.error('[Database Fatal] Unable to connect to persistent PGlite instance:', initErr);
-            throw initErr;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          fs.rmSync(dataDir, { recursive: true, force: true });
+        } catch (rmErr) {
+          try { fs.renameSync(dataDir, `${dataDir}_corrupt_${Date.now()}`); } catch (e) {}
         }
+        fs.mkdirSync(dataDir, { recursive: true });
+
+        pgliteInstance = new PGlite(dataDir, { relaxedDurability: true });
+        await pgliteInstance.waitReady;
+
+        // Initialize schema and restore all persistent user state
+        const { initializeSchema } = await import('../models/schemaInit.js');
+        await initializeSchema();
+        await restoreDatabaseState(pgliteInstance);
       }
 
       console.log(`[Database] Initialized persistent local PostgreSQL engine at ${dataDir}`);

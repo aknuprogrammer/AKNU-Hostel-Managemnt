@@ -139,7 +139,7 @@ export const StaffRecordsPage: React.FC = () => {
       if (res.success) {
         setHostels(res.data);
       }
-    } catch (err) {}
+    } catch (err) { }
   };
 
   useEffect(() => {
@@ -397,11 +397,10 @@ export const StaffRecordsPage: React.FC = () => {
                     <TableCell>
                       <div className="flex items-center space-x-3">
                         <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                            member.isRecordOnly
+                          className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${member.isRecordOnly
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-blue-100 text-blue-800'
-                          }`}
+                            }`}
                         >
                           {member.full_name.charAt(0)}
                         </div>
@@ -445,11 +444,10 @@ export const StaffRecordsPage: React.FC = () => {
                           {member.assigned_hostels.map((h) => (
                             <span
                               key={h.id}
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border shadow-2xs ${
-                                h.category === 'girls'
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold border shadow-2xs ${h.category === 'girls'
                                   ? 'bg-rose-50 text-rose-700 border-rose-200'
                                   : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }`}
+                                }`}
                             >
                               <Building className="w-3 h-3 flex-shrink-0 text-slate-400" />
                               <span>{h.name}</span>
@@ -580,7 +578,7 @@ export const StaffRecordsPage: React.FC = () => {
           <div>
             <Input
               required
-              label="Staff Portal Password *"
+              label="Staff Portal Password"
               type={showAddPassword ? 'text' : 'password'}
               placeholder="e.g. Aknu@2026!"
               value={password}
@@ -652,11 +650,10 @@ export const StaffRecordsPage: React.FC = () => {
                           setSelectedHostelIds((prev) => [...prev, h.id]);
                         }
                       }}
-                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
-                        isSelected
+                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${isSelected
                           ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
+                        }`}
                     >
                       <Checkbox
                         checked={isSelected}
@@ -674,11 +671,10 @@ export const StaffRecordsPage: React.FC = () => {
                           <span className="font-mono text-[10px] text-slate-500 font-semibold">{h.code}</span>
                           {h.category && (
                             <span
-                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
-                                h.category === 'girls'
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${h.category === 'girls'
                                   ? 'bg-rose-100 text-rose-800'
                                   : 'bg-blue-100 text-blue-800'
-                              }`}
+                                }`}
                             >
                               {h.category === 'girls' ? "Girls Wing" : "Boys Wing"}
                             </span>
@@ -855,11 +851,10 @@ export const StaffRecordsPage: React.FC = () => {
                           setEditSelectedHostelIds((prev) => [...prev, h.id]);
                         }
                       }}
-                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${
-                        isSelected
+                      className={`flex items-start space-x-2.5 p-2 rounded-md border cursor-pointer transition select-none ${isSelected
                           ? 'bg-blue-50/80 border-blue-400 text-blue-950 shadow-2xs ring-1 ring-blue-300'
                           : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
+                        }`}
                     >
                       <Checkbox
                         checked={isSelected}
@@ -877,11 +872,10 @@ export const StaffRecordsPage: React.FC = () => {
                           <span className="font-mono text-[10px] text-slate-500 font-semibold">{h.code}</span>
                           {h.category && (
                             <span
-                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${
-                                h.category === 'girls'
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase tracking-wider ${h.category === 'girls'
                                   ? 'bg-rose-100 text-rose-800'
                                   : 'bg-blue-100 text-blue-800'
-                              }`}
+                                }`}
                             >
                               {h.category === 'girls' ? "Girls Wing" : "Boys Wing"}
                             </span>

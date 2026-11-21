@@ -1,44 +1,54 @@
 import readline from 'readline';
+import { executeQuery } from '../config/database.js';
 
-async function getAdminToken(): Promise<string> {
-  const loginRes = await fetch('http://localhost:5000/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@aknu.edu.in', password: 'Aknu@2026!' })
-  });
-  const data = await loginRes.json();
-  if (!data.token) {
-    throw new Error('Could not authenticate as admin: ' + (data.error || 'Server unreachable'));
+let useDirectDb = false;
+
+async function getAdminToken(): Promise<string | null> {
+  try {
+    const loginRes = await fetch('http://localhost:5000/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@aknu.edu.in', password: 'Aknu@2026!' })
+    });
+    const data = await loginRes.json();
+    return data.token || null;
+  } catch (err) {
+    return null;
   }
-  return data.token;
 }
 
-async function runQueryViaApi(sql: string, token: string): Promise<any> {
-  const res = await fetch('http://localhost:5000/api/v1/dashboard/query', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
-    },
-    body: JSON.stringify({ sql })
-  });
-  const data = await res.json();
-  if (!data.success) {
-    throw new Error(data.error);
+async function runQuery(sql: string, token: string | null): Promise<any> {
+  if (useDirectDb || !token) {
+    return await executeQuery(sql);
   }
-  return data;
+  try {
+    const res = await fetch('http://localhost:5000/api/v1/dashboard/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ sql })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error);
+    }
+    return data;
+  } catch (err) {
+    // Fall back to direct database engine
+    useDirectDb = true;
+    return await executeQuery(sql);
+  }
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] || 'stats';
 
-  let token = '';
-  try {
-    token = await getAdminToken();
-  } catch (err: any) {
-    console.error(`[Error] Server must be running on http://localhost:5000: ${err.message}`);
-    process.exit(1);
+  const token = await getAdminToken();
+  if (!token) {
+    useDirectDb = true;
   }
 
   if (command === 'shell' || command === 'cli') {
@@ -68,7 +78,7 @@ async function main() {
       }
 
       try {
-        const res = await runQueryViaApi(trimmed, token);
+        const res = await runQuery(trimmed, token);
         if (res.rows && res.rows.length > 0) {
           console.table(res.rows);
           console.log(`(${res.rowCount} row${res.rowCount === 1 ? '' : 's'})\n`);
@@ -103,7 +113,7 @@ async function main() {
     console.log('Table Record Counts:');
     for (const t of tables) {
       try {
-        const res = await runQueryViaApi(`SELECT COUNT(*) as c FROM ${t}`, token);
+        const res = await runQuery(`SELECT COUNT(*) as c FROM ${t}`, token);
         const count = res.rows[0].c;
         console.log(`  • ${t.padEnd(25)} : ${count}`);
       } catch (e: any) {
@@ -113,14 +123,14 @@ async function main() {
 
     console.log('\nQuick Metric Summary:');
     try {
-      const students = await runQueryViaApi('SELECT COUNT(*) as c FROM students', token);
-      const beds = await runQueryViaApi(`
+      const students = await runQuery('SELECT COUNT(*) as c FROM students', token);
+      const beds = await runQuery(`
         SELECT COUNT(*) as total,
                COUNT(CASE WHEN status = 'occupied' THEN 1 END) as occupied,
                COUNT(CASE WHEN status = 'vacant' THEN 1 END) as vacant
         FROM beds
       `, token);
-      const meals = await runQueryViaApi('SELECT COUNT(*) as c FROM meal_transactions', token);
+      const meals = await runQuery('SELECT COUNT(*) as c FROM meal_transactions', token);
 
       console.log(`  Total Registered Students : ${students.rows[0].c}`);
       console.log(`  Total Hostel Beds         : ${beds.rows[0].total} (${beds.rows[0].occupied} occupied, ${beds.rows[0].vacant} vacant)`);
@@ -140,7 +150,7 @@ async function main() {
 
     console.log(`\nExecuting SQL: ${sql}\n`);
     try {
-      const res = await runQueryViaApi(sql, token);
+      const res = await runQuery(sql, token);
       console.table(res.rows);
       console.log(`\nReturned ${res.rowCount} rows.`);
     } catch (err: any) {
